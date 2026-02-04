@@ -1,0 +1,38 @@
+# Build artifacts
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.o
+*.a
+*.lib
+*.dll
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+brainllm.log
+
+# Dependencies
+/include/nlohmann_json/
+/3rdparty/
+
+# Runtime
+*.db
+*.cache
