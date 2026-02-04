@@ -1,0 +1,82 @@
+cmake_minimum_required(VERSION 3.16)
+project(BrainLLM)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+
+# Qt6 Configuration
+find_package(Qt6 COMPONENTS 
+    Core 
+    Gui 
+    Widgets 
+    Network 
+    Concurrent
+    REQUIRED
+)
+
+# Third-party libraries
+find_package(nlohmann_json 3.2.0 QUIET)
+if(NOT nlohmann_json_FOUND)
+    message(STATUS "nlohmann_json not found, will use header-only")
+endif()
+
+# Core LLM Brain Library
+add_library(brain_core
+    src/brain/neural_network.cpp
+    src/brain/memory_system.cpp
+    src/brain/attention_mechanism.cpp
+    src/brain/llm_engine.cpp
+    src/settings/config_manager.cpp
+)
+
+target_include_directories(brain_core PUBLIC include)
+
+# REST API Server
+add_library(api_server
+    src/api/rest_server.cpp
+    src/api/request_handler.cpp
+    src/api/endpoints.cpp
+)
+
+target_link_libraries(api_server PUBLIC brain_core Qt6::Network Qt6::Core)
+target_include_directories(api_server PUBLIC include)
+
+# GUI Application
+add_executable(BrainLLM_GUI
+    gui/main_window.cpp
+    gui/editor_widget.cpp
+    gui/console_widget.cpp
+    gui/visualization_widget.cpp
+    gui/menu_system.cpp
+    gui/settings_dialog.cpp
+    src/main_gui.cpp
+)
+
+target_link_libraries(BrainLLM_GUI
+    brain_core
+    api_server
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Network
+    Qt6::Concurrent
+)
+
+target_include_directories(BrainLLM_GUI PUBLIC include)
+
+# API Server Executable
+add_executable(BrainLLM_API
+    src/main_api.cpp
+)
+
+target_link_libraries(BrainLLM_API
+    api_server
+    brain_core
+    Qt6::Core
+    Qt6::Network
+)
+
+target_include_directories(BrainLLM_API PUBLIC include)
