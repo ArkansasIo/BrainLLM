@@ -49,6 +49,18 @@ add_library(advanced_brain
 target_link_libraries(advanced_brain PUBLIC brain_core)
 target_include_directories(advanced_brain PUBLIC include)
 
+# Cognitive & Linguistic Modules (v3.0)
+add_library(cognitive_linguistic
+    src/human_brain/cognitive_processes.cpp
+    src/human_brain/english_processor.cpp
+    src/human_brain/multilingual_processor.cpp
+    src/human_brain/grammar_linguistics.cpp
+    src/human_brain/integrated_cognitive_module.cpp
+)
+
+target_link_libraries(cognitive_linguistic PUBLIC brain_core advanced_brain)
+target_include_directories(cognitive_linguistic PUBLIC include)
+
 # REST API Server
 add_library(api_server
     src/api/rest_server.cpp
@@ -56,7 +68,7 @@ add_library(api_server
     src/api/endpoints.cpp
 )
 
-target_link_libraries(api_server PUBLIC brain_core advanced_brain Qt6::Network Qt6::Core)
+target_link_libraries(api_server PUBLIC brain_core advanced_brain cognitive_linguistic Qt6::Network Qt6::Core)
 target_include_directories(api_server PUBLIC include)
 
 # GUI Application
@@ -73,6 +85,7 @@ add_executable(BrainLLM_GUI
 target_link_libraries(BrainLLM_GUI
     brain_core
     advanced_brain
+    cognitive_linguistic
     api_server
     Qt6::Core
     Qt6::Gui
@@ -92,6 +105,7 @@ target_link_libraries(BrainLLM_API
     api_server
     brain_core
     advanced_brain
+    cognitive_linguistic
     Qt6::Core
     Qt6::Network
 )
