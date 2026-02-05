@@ -34,6 +34,21 @@ add_library(brain_core
 
 target_include_directories(brain_core PUBLIC include)
 
+# Advanced Brain Modules
+add_library(advanced_brain
+    src/advanced/robotics_laws.cpp
+    src/advanced/sentience.cpp
+    src/advanced/advanced_learning.cpp
+    src/advanced/advanced_architectures.cpp
+    src/advanced/knowledge_reasoning.cpp
+    src/advanced/dialogue_personality.cpp
+    src/advanced/safety_security.cpp
+    src/advanced/comprehensive_brain.cpp
+)
+
+target_link_libraries(advanced_brain PUBLIC brain_core)
+target_include_directories(advanced_brain PUBLIC include)
+
 # REST API Server
 add_library(api_server
     src/api/rest_server.cpp
@@ -41,7 +56,7 @@ add_library(api_server
     src/api/endpoints.cpp
 )
 
-target_link_libraries(api_server PUBLIC brain_core Qt6::Network Qt6::Core)
+target_link_libraries(api_server PUBLIC brain_core advanced_brain Qt6::Network Qt6::Core)
 target_include_directories(api_server PUBLIC include)
 
 # GUI Application
@@ -57,6 +72,7 @@ add_executable(BrainLLM_GUI
 
 target_link_libraries(BrainLLM_GUI
     brain_core
+    advanced_brain
     api_server
     Qt6::Core
     Qt6::Gui
@@ -75,6 +91,7 @@ add_executable(BrainLLM_API
 target_link_libraries(BrainLLM_API
     api_server
     brain_core
+    advanced_brain
     Qt6::Core
     Qt6::Network
 )
