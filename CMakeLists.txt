@@ -61,6 +61,22 @@ add_library(cognitive_linguistic
 target_link_libraries(cognitive_linguistic PUBLIC brain_core advanced_brain)
 target_include_directories(cognitive_linguistic PUBLIC include)
 
+# Quantum Computing Module (v4.0)
+add_library(quantum_computing
+    src/quantum/quantum_computing.cpp
+)
+
+target_link_libraries(quantum_computing PUBLIC brain_core)
+target_include_directories(quantum_computing PUBLIC include)
+
+# Quantum LLM Integration (v4.0)
+add_library(quantum_llm
+    src/quantum/quantum_llm_integration.cpp
+)
+
+target_link_libraries(quantum_llm PUBLIC brain_core cognitive_linguistic quantum_computing)
+target_include_directories(quantum_llm PUBLIC include)
+
 # REST API Server
 add_library(api_server
     src/api/rest_server.cpp
@@ -86,6 +102,8 @@ target_link_libraries(BrainLLM_GUI
     brain_core
     advanced_brain
     cognitive_linguistic
+    quantum_computing
+    quantum_llm
     api_server
     Qt6::Core
     Qt6::Gui
@@ -106,6 +124,8 @@ target_link_libraries(BrainLLM_API
     brain_core
     advanced_brain
     cognitive_linguistic
+    quantum_computing
+    quantum_llm
     Qt6::Core
     Qt6::Network
 )
