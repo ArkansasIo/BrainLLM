@@ -1,5 +1,6 @@
 #include "request_handler.h"
 #include "lua_scripting_system.h"
+#include "wake_word.h"
 #include "voice_audio_system.h"
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -37,6 +38,18 @@ int extract_int_field(const QString& body, const QString& field, int fallback) {
         QJsonObject obj = doc.object();
         if (obj.contains(field)) {
             return obj.value(field).toInt(fallback);
+        }
+    }
+    return fallback;
+}
+
+bool extract_bool_field(const QString& body, const QString& field, bool fallback) {
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(body.toUtf8(), &error);
+    if (error.error == QJsonParseError::NoError && doc.isObject()) {
+        QJsonObject obj = doc.object();
+        if (obj.contains(field)) {
+            return obj.value(field).toBool(fallback);
         }
     }
     return fallback;
@@ -100,6 +113,46 @@ QString model_name_from_body(const QString& body) {
     return extract_text_field(body, "model", "brainllm-local");
 }
 
+std::vector<std::string> wake_words_from_body(const QString& body) {
+    QJsonParseError error;
+    QJsonDocument doc = QJsonDocument::fromJson(body.toUtf8(), &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        return default_wake_words();
+    }
+
+    const QJsonObject obj = doc.object();
+    if (obj.value("wake_words").isArray()) {
+        std::vector<std::string> words;
+        for (const QJsonValue& item : obj.value("wake_words").toArray()) {
+            const QString word = item.toString().trimmed();
+            if (!word.isEmpty()) {
+                words.push_back(word.toStdString());
+            }
+        }
+        return words.empty() ? default_wake_words() : words;
+    }
+
+    if (obj.value("wake_words").isString()) {
+        return parse_wake_words(obj.value("wake_words").toString().toStdString());
+    }
+
+    return default_wake_words();
+}
+
+QString assistant_text_from_body(const QString& body) {
+    QString text = extract_text_field(body, "text", QString()).trimmed();
+    if (!text.isEmpty()) {
+        return text;
+    }
+
+    text = extract_text_field(body, "input", QString()).trimmed();
+    if (!text.isEmpty()) {
+        return text;
+    }
+
+    return extract_chat_prompt(body).trimmed();
+}
+
 QJsonObject airllm_config_to_json(const AirLLMRuntimeConfig& config, bool available) {
     QJsonObject object;
     object["python_executable"] = QString::fromStdString(config.python_executable);
@@ -146,6 +199,9 @@ QString RequestHandler::handle_request(const QString& method, const QString& pat
     }
     else if (path == "/api/chat" && method == "POST") {
         return handle_chat(body);
+    }
+    else if (path == "/api/assistant" && method == "POST") {
+        return handle_assistant(body);
     }
     else if (path == "/api/reset" && method == "POST") {
         return handle_reset(body);
@@ -284,6 +340,7 @@ QString RequestHandler::handle_endpoints(const QString& body) {
         {"POST", "/api/process", "Process input text through the local brain engine"},
         {"POST", "/api/generate", "Generate text with Wolfram/AirLLM/fallback routing"},
         {"POST", "/api/chat", "Chat-oriented generation endpoint for the web client"},
+        {"POST", "/api/assistant", "Wake-word assistant endpoint for text or OpenAI-style messages"},
         {"GET", "/api/status", "Return runtime metrics and confidence"},
         {"GET", "/api/health", "Alias for runtime health and status"},
         {"GET", "/api/memory?query=...", "Recall matching memory records"},
@@ -396,6 +453,49 @@ QString RequestHandler::handle_chat(const QString& body) {
     response["response"] = response_text;
     response["confidence"] = engine_->get_confidence();
     response["state"] = "idle";
+    response["timestamp"] = static_cast<qint64>(QDateTime::currentSecsSinceEpoch());
+    return compact_json(response);
+}
+
+QString RequestHandler::handle_assistant(const QString& body) {
+    if (!engine_) {
+        return create_error_response("Engine not initialized");
+    }
+
+    const QString raw_text = assistant_text_from_body(body);
+    if (raw_text.isEmpty()) {
+        return create_error_response("Assistant input is empty. Provide text, input, or messages.");
+    }
+
+    const bool require_wake_word = extract_bool_field(body, "require_wake_word", true);
+    const WakeWordMatch wake = detect_wake_word(raw_text.toStdString(), wake_words_from_body(body));
+    if (require_wake_word && !wake.activated) {
+        QJsonObject response;
+        response["activated"] = false;
+        response["input"] = raw_text;
+        response["error"] = "Wake word required. Try 'hey siri', 'alexa', or 'hey brainllm' before the command.";
+        response["timestamp"] = static_cast<qint64>(QDateTime::currentSecsSinceEpoch());
+        return compact_json(response);
+    }
+
+    QString command = wake.activated
+        ? QString::fromStdString(wake.command).trimmed()
+        : raw_text.trimmed();
+    if (command.isEmpty()) {
+        command = "How can I help?";
+    }
+
+    const int max_tokens = extract_int_field(body, "max_tokens", 220);
+    const QString response_text = QString::fromStdString(
+        engine_->generate_response(command.toStdString(), max_tokens));
+
+    QJsonObject response;
+    response["activated"] = wake.activated || !require_wake_word;
+    response["wake_word"] = QString::fromStdString(wake.wake_word);
+    response["input"] = raw_text;
+    response["command"] = command;
+    response["response"] = response_text;
+    response["confidence"] = engine_->get_confidence();
     response["timestamp"] = static_cast<qint64>(QDateTime::currentSecsSinceEpoch());
     return compact_json(response);
 }
@@ -514,13 +614,25 @@ QString RequestHandler::handle_speech_synthesize(const QString& body) {
 QString RequestHandler::handle_speech_recognize(const QString& body) {
     VoiceAudioSystem speech;
     const int timeout_seconds = extract_int_field(body, "timeout_seconds", 6);
+    const bool require_wake_word = extract_bool_field(body, "require_wake_word", false);
     const SpeechRecognitionResult result = speech.recognize_once(timeout_seconds);
+    const WakeWordMatch wake = detect_wake_word(result.transcript, wake_words_from_body(body));
+    const QString command = wake.activated
+        ? QString::fromStdString(wake.command).trimmed()
+        : QString::fromStdString(result.transcript).trimmed();
 
     QJsonObject response;
     response["success"] = result.success;
     response["transcript"] = QString::fromStdString(result.transcript);
+    response["activated"] = wake.activated || !require_wake_word;
+    response["wake_word"] = QString::fromStdString(wake.wake_word);
+    response["command"] = command.isEmpty() && wake.activated ? "How can I help?" : command;
     response["confidence"] = result.confidence;
     response["error"] = QString::fromStdString(result.error);
+    if (require_wake_word && result.success && !wake.activated) {
+        response["success"] = false;
+        response["error"] = "Wake word not detected.";
+    }
     return compact_json(response);
 }
 

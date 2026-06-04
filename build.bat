@@ -30,6 +30,7 @@ if %ERRORLEVEL% EQU 0 (
     if exist build\Release\data xcopy /E /I /Y build\Release\data output\build\data >nul
     if exist build\Release\scripts xcopy /E /I /Y build\Release\scripts output\build\scripts >nul
     if exist build\Release\tools xcopy /E /I /Y build\Release\tools output\build\tools >nul
+    if exist build\Release\third_party robocopy build\Release\third_party output\build\third_party /MIR >nul
     if exist config.ini copy /Y config.ini output\build\config.ini >nul
     where windeployqt >nul 2>nul
     if %ERRORLEVEL% EQU 0 (

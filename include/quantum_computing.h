@@ -158,6 +158,7 @@ public:
 private:
     struct GateOperation {
         std::shared_ptr<QuantumGate> gate;
+        std::shared_ptr<ControlledGate> controlled_gate;
         int qubit1;
         int qubit2;
         bool is_controlled;

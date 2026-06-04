@@ -3,6 +3,7 @@ project(BrainLLM)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+enable_testing()
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
@@ -23,6 +24,7 @@ add_library(brain_core
     src/brain/memory_system.cpp
     src/brain/attention_mechanism.cpp
     src/brain/wolfram_alpha_client.cpp
+    src/brain/wake_word.cpp
     src/brain/llm_engine.cpp
     src/settings/config_manager.cpp
     src/settings/data_config_system.cpp
@@ -173,7 +175,28 @@ add_custom_command(TARGET BrainLLM_API POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/tools
         $<TARGET_FILE_DIR:BrainLLM_API>/tools
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/third_party/openjarvis
+        $<TARGET_FILE_DIR:BrainLLM_API>/third_party/openjarvis
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/third_party/llm_sources
+        $<TARGET_FILE_DIR:BrainLLM_API>/third_party/llm_sources
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/config.ini
         $<TARGET_FILE_DIR:BrainLLM_API>/config.ini
 )
+
+# ── Smoke Tests ───────────────────────────────────────────────────────────────
+add_executable(BrainLLM_QuantumSmoke
+    tests/quantum_smoke.cpp
+)
+target_link_libraries(BrainLLM_QuantumSmoke
+    quantum_llm
+    quantum_computing
+    cognitive_linguistic
+    advanced_brain
+    brain_core
+    Qt6::Core
+)
+target_include_directories(BrainLLM_QuantumSmoke PUBLIC include)
+add_test(NAME quantum_smoke COMMAND BrainLLM_QuantumSmoke)
