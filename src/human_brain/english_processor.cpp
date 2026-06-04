@@ -250,17 +250,13 @@ std::string EnglishProcessor::classify_text_style(const std::string& text) {
 }
 
 std::string EnglishProcessor::generate_synonym_phrase(const std::string& phrase) {
-    std::map<std::string, std::string> synonyms = {
-        {"good", "strong"}, {"bad", "weak"}, {"fast", "quick"},
-        {"smart", "intelligent"}, {"big", "large"}, {"small", "compact"}
-    };
     auto tokens = tokenize(phrase);
     for (auto& token : tokens) {
         std::string lower = token;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        auto it = synonyms.find(lower);
-        if (it != synonyms.end()) {
-            token = it->second;
+        auto it = extended_synonyms_.find(lower);
+        if (it != extended_synonyms_.end() && !it->second.empty()) {
+            token = it->second.front();
         }
     }
 
@@ -291,16 +287,10 @@ float EnglishProcessor::get_word_frequency(const std::string& word) {
 }
 
 std::vector<std::string> EnglishProcessor::get_similar_words(const std::string& word, int count) {
-    std::map<std::string, std::vector<std::string>> dictionary = {
-        {"ai", {"assistant", "model", "agent", "automation", "reasoner"}},
-        {"brain", {"cognition", "memory", "attention", "reasoning", "learning"}},
-        {"fast", {"quick", "rapid", "speedy", "efficient", "responsive"}},
-        {"good", {"strong", "useful", "effective", "reliable", "sound"}}
-    };
     std::string lower = word;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    auto it = dictionary.find(lower);
-    std::vector<std::string> similar = (it != dictionary.end()) ? it->second : std::vector<std::string>{word};
+    auto it = extended_synonyms_.find(lower);
+    std::vector<std::string> similar = (it != extended_synonyms_.end()) ? it->second : std::vector<std::string>{word};
     if (similar.size() > static_cast<size_t>(count)) {
         similar.resize(count);
     }

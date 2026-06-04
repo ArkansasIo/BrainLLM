@@ -100,7 +100,6 @@ VoicePanel::VoicePanel(QWidget* parent)
         "  border: 1px solid #1a5040;"
         "}");
     build_ui();
-    refresh_voice_list();
 
     connect(rec_timer_, &QTimer::timeout, this, &VoicePanel::recognition_finished);
 }
@@ -216,6 +215,7 @@ void VoicePanel::build_ui()
     grid->addWidget(make_label("VOICE"), 1, 0);
     voice_combo_ = new QComboBox;
     voice_combo_->setStyleSheet(personality_combo_->styleSheet());
+    voice_combo_->addItem("Auto (female preference)", "");
     grid->addWidget(voice_combo_, 1, 1, 1, 3);
 
     // Row 2: Pitch
@@ -292,6 +292,8 @@ void VoicePanel::build_ui()
 // ── Voice list ────────────────────────────────────────────────────────────────
 void VoicePanel::refresh_voice_list()
 {
+    if (!voice_combo_) return;
+
     voice_combo_->blockSignals(true);
     voice_combo_->clear();
     voice_combo_->addItem("Auto (female preference)", "");

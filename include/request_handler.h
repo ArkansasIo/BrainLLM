@@ -21,7 +21,12 @@ private:
     QString handle_status(const QString& body);
     QString handle_memory(const QString& body);
     QString handle_config(const QString& body);
+    QString handle_endpoints(const QString& body);
+    QString handle_algorithms(const QString& body);
     QString handle_train(const QString& body);
+    QString handle_chat(const QString& body);
+    QString handle_reset(const QString& body);
+    QString handle_airllm_config(const QString& method, const QString& body);
     QString handle_models(const QString& body);
     QString handle_chat_completions(const QString& body);
     QString handle_completions(const QString& body);

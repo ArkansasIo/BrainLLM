@@ -6,6 +6,45 @@
 
 namespace BrainLLM {
 
+namespace {
+
+std::vector<std::string> quantum_tokens_from_text(const std::string& text) {
+    std::vector<std::string> tokens;
+    std::string current;
+    for (unsigned char c : text) {
+        if (std::isalnum(c)) {
+            current += static_cast<char>(std::tolower(c));
+        } else if (!current.empty()) {
+            tokens.push_back(current);
+            current.clear();
+        }
+    }
+    if (!current.empty()) {
+        tokens.push_back(current);
+    }
+    if (tokens.empty() && !text.empty()) {
+        tokens.push_back(text);
+    }
+    return tokens;
+}
+
+std::vector<float> lexical_features_from_text(const std::string& text) {
+    std::vector<float> features;
+    std::vector<std::string> tokens = quantum_tokens_from_text(text);
+    for (const auto& token : tokens) {
+        uint32_t hash = 2166136261u;
+        for (unsigned char c : token) {
+            hash ^= c;
+            hash *= 16777619u;
+        }
+        features.push_back(static_cast<float>(hash % 1000) / 999.0f);
+        features.push_back(std::min(1.0f, static_cast<float>(token.size()) / 16.0f));
+    }
+    return features;
+}
+
+} // namespace
+
 // ========== QUANTUM LLM INTEGRATION IMPLEMENTATION ==========
 
 QuantumLLMIntegration::QuantumLLMIntegration(int num_qubits)
@@ -32,15 +71,13 @@ QuantumLLMIntegration::QuantumTextEncoding QuantumLLMIntegration::encode_text_qu
         quantum_circuit_->add_gate(QuantumGate(QuantumGate::Hadamard), i);
     }
     
-    // Tokenize text
-    encoding.encoded_tokens = {"quantum", "encoded", "text"};  // Placeholder
-    encoding.entanglement_degree = 0.85f;
+    encoding.encoded_tokens = quantum_tokens_from_text(text);
+    const float token_density = std::min(1.0f, static_cast<float>(encoding.encoded_tokens.size()) /
+                                              static_cast<float>(std::max(1, num_qubits_)));
+    encoding.entanglement_degree = 0.45f + (token_density * 0.45f);
     
     // Extract features from text
-    std::vector<float> features;
-    for (char c : text) {
-        features.push_back(static_cast<float>(c) / 255.0f);
-    }
+    std::vector<float> features = lexical_features_from_text(text);
     
     auto quantum_features = encode_classical_to_quantum(features);
     for (float f : quantum_features) {
@@ -301,9 +338,8 @@ QuantumLLMIntegration::HybridCognitiveQuantum QuantumLLMIntegration::process_hyb
     
     HybridCognitiveQuantum result;
     
-    // Classical cognitive analysis (placeholder - would use IntegratedCognitiveModule)
-    result.cognitive_analysis.understood_meaning = user_input;
-    result.cognitive_analysis.understanding_confidence = 0.75f;
+    IntegratedCognitiveModule cognitive_module;
+    result.cognitive_analysis = cognitive_module.understand_user_input(user_input);
     
     // Quantum analysis
     result.quantum_analysis = understand_text_quantum(user_input);

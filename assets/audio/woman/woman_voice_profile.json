@@ -10,13 +10,13 @@
     {
       "asset_id": "woman_startup",
       "file_path": "assets/audio/woman/startup_tone.wav",
-      "description": "Generated startup tone placeholder"
+      "description": "Bundled generated startup tone"
     },
     {
       "asset_id": "woman_notify",
       "file_path": "assets/audio/woman/notify_tone.wav",
-      "description": "Generated notification tone placeholder"
+      "description": "Bundled generated notification tone"
     }
   ],
-  "note": "These are placeholder WAV tones. Real speech synthesis requires a TTS backend."
+  "note": "These WAV tones provide bundled UI audio cues. Spoken text output is handled by the platform TTS backend when available."
 }

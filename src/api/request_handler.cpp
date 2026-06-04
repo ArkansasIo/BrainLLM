@@ -100,6 +100,20 @@ QString model_name_from_body(const QString& body) {
     return extract_text_field(body, "model", "brainllm-local");
 }
 
+QJsonObject airllm_config_to_json(const AirLLMRuntimeConfig& config, bool available) {
+    QJsonObject object;
+    object["python_executable"] = QString::fromStdString(config.python_executable);
+    object["airllm_root"] = QString::fromStdString(config.airllm_root);
+    object["runner_script"] = QString::fromStdString(config.runner_script);
+    object["model_id"] = QString::fromStdString(config.model_id);
+    object["layer_shards_path"] = QString::fromStdString(config.layer_shards_path);
+    object["compression"] = QString::fromStdString(config.compression);
+    object["max_new_tokens"] = config.max_new_tokens;
+    object["use_cuda"] = config.use_cuda;
+    object["available"] = available;
+    return object;
+}
+
 } // namespace
 
 RequestHandler::RequestHandler(std::shared_ptr<LLMEngine> engine)
@@ -121,8 +135,26 @@ QString RequestHandler::handle_request(const QString& method, const QString& pat
     else if (path == "/api/config" && method == "GET") {
         return handle_config(body);
     }
+    else if (path == "/api/endpoints" && method == "GET") {
+        return handle_endpoints(body);
+    }
+    else if (path == "/api/algorithms" && method == "GET") {
+        return handle_algorithms(body);
+    }
     else if (path == "/api/train" && method == "POST") {
         return handle_train(body);
+    }
+    else if (path == "/api/chat" && method == "POST") {
+        return handle_chat(body);
+    }
+    else if (path == "/api/reset" && method == "POST") {
+        return handle_reset(body);
+    }
+    else if (path == "/api/health" && method == "GET") {
+        return handle_status(body);
+    }
+    else if (path == "/api/airllm/config" && (method == "GET" || method == "POST")) {
+        return handle_airllm_config(method, body);
     }
     else if (path == "/api/wolfram" && method == "POST") {
         return handle_wolfram(body);
@@ -243,6 +275,89 @@ QString RequestHandler::handle_config(const QString& body) {
     return QString::fromStdString(oss.str());
 }
 
+QString RequestHandler::handle_endpoints(const QString& body) {
+    Q_UNUSED(body);
+
+    const std::vector<std::tuple<QString, QString, QString>> definitions = {
+        {"GET", "/", "Serve the BrainLLM web client"},
+        {"GET", "/client", "Serve the BrainLLM web client"},
+        {"POST", "/api/process", "Process input text through the local brain engine"},
+        {"POST", "/api/generate", "Generate text with Wolfram/AirLLM/fallback routing"},
+        {"POST", "/api/chat", "Chat-oriented generation endpoint for the web client"},
+        {"GET", "/api/status", "Return runtime metrics and confidence"},
+        {"GET", "/api/health", "Alias for runtime health and status"},
+        {"GET", "/api/memory?query=...", "Recall matching memory records"},
+        {"GET", "/api/config", "Return active brain configuration"},
+        {"GET", "/api/endpoints", "Return this endpoint index"},
+        {"GET", "/api/algorithms", "Return active local LLM algorithm modules"},
+        {"POST", "/api/train", "Train/update the lightweight local model state"},
+        {"POST", "/api/reset", "Reset brain state, context, and memory"},
+        {"GET", "/api/airllm/config", "Read AirLLM runtime configuration"},
+        {"POST", "/api/airllm/config", "Update AirLLM runtime configuration"},
+        {"POST", "/api/wolfram", "Query Wolfram Alpha external computation"},
+        {"GET", "/api/speech/status", "Inspect speech backend availability"},
+        {"POST", "/api/speech/speak", "Speak text through OS text-to-speech"},
+        {"POST", "/api/speech/synthesize", "Synthesize text to WAV"},
+        {"POST", "/api/speech/recognize", "Recognize one speech input"},
+        {"GET", "/api/scripts", "List registered Lua script plans"},
+        {"POST", "/api/scripts/execute", "Execute a registered Lua script plan"},
+        {"GET", "/v1/models", "OpenAI-compatible model list"},
+        {"POST", "/v1/completions", "OpenAI-compatible text completion"},
+        {"POST", "/v1/chat/completions", "OpenAI-compatible chat completion"}
+    };
+
+    QJsonArray endpoints;
+    for (const auto& [method, path, description] : definitions) {
+        QJsonObject item;
+        item["method"] = method;
+        item["path"] = path;
+        item["description"] = description;
+        endpoints.append(item);
+    }
+
+    QJsonObject response;
+    response["endpoints"] = endpoints;
+    response["count"] = endpoints.size();
+    return compact_json(response);
+}
+
+QString RequestHandler::handle_algorithms(const QString& body) {
+    Q_UNUSED(body);
+
+    const std::vector<std::pair<QString, QString>> algorithms = {
+        {"prompt_analysis", "Tokenizes text, extracts keywords, detects questions, and estimates prompt complexity."},
+        {"hashed_embedding", "Builds normalized local semantic embeddings from token hashes."},
+        {"intent_router", "Routes prompts to chat, summarize, explain, plan, recall, train, compute, status, or creative paths."},
+        {"memory_retrieval", "Ranks memory with lexical overlap, term density, and stored importance."},
+        {"semantic_reranker", "Reranks retrieved memories with cosine embedding similarity plus lexical overlap."},
+        {"context_compressor", "Compresses intent, topics, top memory, and prompt into a compact local context."},
+        {"extractive_summarizer", "Selects high-signal sentences and key topics from the prompt."},
+        {"explanation_synthesizer", "Builds structured explanations from intent, keywords, memory, and complexity."},
+        {"planning_synthesizer", "Creates deterministic implementation plans from prompt topics."},
+        {"training_retrieval", "Learns `input -> output` examples and recalls the closest trained response."},
+        {"sequence_model", "Learns local next-token transitions for deterministic creative fallback text."},
+        {"beam_search_decoder", "Expands multiple local continuations and keeps the highest-scoring beam."},
+        {"top_k_decoder", "Ranks candidate next tokens by local transition probability."},
+        {"response_validator", "Repairs empty, unsafe, unpunctuated, or whitespace-heavy local responses."},
+        {"tool_router", "Routes computational prompts to Wolfram Alpha when configured."},
+        {"airllm_bridge", "Runs optional AirLLM subprocess inference when model configuration is available."},
+        {"token_budgeter", "Truncates generated output to the requested approximate token budget."}
+    };
+
+    QJsonArray items;
+    for (const auto& [id, description] : algorithms) {
+        QJsonObject item;
+        item["id"] = id;
+        item["description"] = description;
+        items.append(item);
+    }
+
+    QJsonObject response;
+    response["algorithms"] = items;
+    response["count"] = items.size();
+    return compact_json(response);
+}
+
 QString RequestHandler::handle_train(const QString& body) {
     if (!engine_) {
         return create_error_response("Engine not initialized");
@@ -264,6 +379,70 @@ QString RequestHandler::handle_train(const QString& body) {
     return QString("{\"message\":\"Training completed\",\"samples\":%1,\"confidence\":%2}")
         .arg(static_cast<int>(training_data.size()))
         .arg(engine_->get_confidence());
+}
+
+QString RequestHandler::handle_chat(const QString& body) {
+    if (!engine_) {
+        return create_error_response("Engine not initialized");
+    }
+
+    const QString prompt = extract_chat_prompt(body).trimmed();
+    const int max_tokens = extract_int_field(body, "max_tokens", 220);
+    const QString response_text = QString::fromStdString(
+        engine_->generate_response(prompt.toStdString(), max_tokens));
+
+    QJsonObject response;
+    response["input"] = prompt;
+    response["response"] = response_text;
+    response["confidence"] = engine_->get_confidence();
+    response["state"] = "idle";
+    response["timestamp"] = static_cast<qint64>(QDateTime::currentSecsSinceEpoch());
+    return compact_json(response);
+}
+
+QString RequestHandler::handle_reset(const QString& body) {
+    Q_UNUSED(body);
+    if (!engine_) {
+        return create_error_response("Engine not initialized");
+    }
+
+    engine_->reset();
+    engine_->initialize();
+
+    QJsonObject response;
+    response["message"] = "BrainLLM state, context, and memory were reset.";
+    response["confidence"] = engine_->get_confidence();
+    return compact_json(response);
+}
+
+QString RequestHandler::handle_airllm_config(const QString& method, const QString& body) {
+    if (!engine_) {
+        return create_error_response("Engine not initialized");
+    }
+
+    if (method == "POST") {
+        QJsonParseError error;
+        QJsonDocument doc = QJsonDocument::fromJson(body.toUtf8(), &error);
+        if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+            return create_error_response("Expected JSON object for AirLLM configuration.");
+        }
+
+        AirLLMRuntimeConfig config = engine_->get_airllm_config();
+        const QJsonObject obj = doc.object();
+        if (obj.contains("python_executable")) config.python_executable = obj.value("python_executable").toString().toStdString();
+        if (obj.contains("airllm_root")) config.airllm_root = obj.value("airllm_root").toString().toStdString();
+        if (obj.contains("runner_script")) config.runner_script = obj.value("runner_script").toString().toStdString();
+        if (obj.contains("model_id")) config.model_id = obj.value("model_id").toString().toStdString();
+        if (obj.contains("layer_shards_path")) config.layer_shards_path = obj.value("layer_shards_path").toString().toStdString();
+        if (obj.contains("compression")) config.compression = obj.value("compression").toString().toStdString();
+        if (obj.contains("max_new_tokens")) config.max_new_tokens = obj.value("max_new_tokens").toInt(config.max_new_tokens);
+        if (obj.contains("use_cuda")) config.use_cuda = obj.value("use_cuda").toBool(config.use_cuda);
+        engine_->configure_airllm(config);
+    }
+
+    QJsonObject response = airllm_config_to_json(engine_->get_airllm_config(), engine_->is_airllm_available());
+    response["message"] = method == "POST" ? "AirLLM configuration updated." : "AirLLM configuration loaded.";
+    return compact_json(response);
 }
 
 QString RequestHandler::handle_wolfram(const QString& body) {

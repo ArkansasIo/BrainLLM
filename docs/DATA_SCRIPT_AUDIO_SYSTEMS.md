@@ -46,4 +46,4 @@ Files:
 - `assets/audio/woman/startup_tone.wav`
 - `assets/audio/woman/notify_tone.wav`
 
-The checked-in WAV files are placeholder tones for UI and startup events. Real spoken female voice output requires a TTS backend, which can be connected later through `VoiceAudioSystem`.
+The checked-in WAV files provide bundled UI and startup tones. Spoken text output uses the platform TTS backend through `VoiceAudioSystem` when it is available.

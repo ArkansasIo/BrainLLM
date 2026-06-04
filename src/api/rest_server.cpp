@@ -1,10 +1,51 @@
 #include "rest_server.h"
 #include "request_handler.h"
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QMimeDatabase>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QTcpSocket>
 
 namespace BrainLLM {
+
+namespace {
+
+QString status_text_for(int status_code) {
+    if (status_code == 204) return "No Content";
+    if (status_code == 400) return "Bad Request";
+    if (status_code == 403) return "Forbidden";
+    if (status_code == 404) return "Not Found";
+    if (status_code >= 500) return "Server Error";
+    return "OK";
+}
+
+QString clean_static_path(QString path) {
+    if (path == "/" || path == "/client") {
+        return "index.html";
+    }
+    if (path.startsWith("/client/")) {
+        path = path.mid(QString("/client/").size());
+    } else if (path.startsWith('/')) {
+        path = path.mid(1);
+    }
+    return QDir::cleanPath(path);
+}
+
+QStringList static_roots() {
+    const QString app_dir = QCoreApplication::applicationDirPath();
+    const QString cwd = QDir::currentPath();
+    return {
+        QDir(app_dir).filePath("client"),
+        QDir(cwd).filePath("output/build/client"),
+        QDir(cwd).filePath("web/client"),
+        QDir(app_dir).filePath("../web/client")
+    };
+}
+
+} // namespace
 
 RestServer::RestServer(int port)
     : tcp_server_(new QTcpServer(this)), port_(port), engine_(nullptr) {
@@ -66,14 +107,21 @@ void RestServer::on_read_ready() {
     auto request = parse_http_request(raw_data);
     
     if (!engine_) {
-        socket->write(build_http_response("{\"error\":\"Engine not initialized\"}", 503).toUtf8());
+        socket->write(build_http_response(QString("{\"error\":\"Engine not initialized\"}"), 503));
         socket->flush();
         socket->close();
         return;
     }
 
     if (request.method == "OPTIONS") {
-        socket->write(build_http_response("{}", 204).toUtf8());
+        socket->write(build_http_response(QString("{}"), 204));
+        socket->flush();
+        socket->close();
+        return;
+    }
+
+    if (is_static_asset_request(request)) {
+        socket->write(serve_static_asset(request.path));
         socket->flush();
         socket->close();
         return;
@@ -94,7 +142,7 @@ void RestServer::on_read_ready() {
 
     QString payload = handler.handle_request(request.method, path, body);
     int status = payload.contains("\"error\"") ? 404 : 200;
-    socket->write(build_http_response(payload, status).toUtf8());
+    socket->write(build_http_response(payload, status));
     
     socket->flush();
     socket->close();
@@ -128,21 +176,59 @@ RestServer::HttpRequest RestServer::parse_http_request(const QString& raw_reques
     return request;
 }
 
-QString RestServer::build_http_response(const QString& body, int status_code) {
-    QString status_text = "OK";
-    if (status_code == 404) status_text = "Not Found";
-    else if (status_code >= 500) status_text = "Server Error";
-    else if (status_code >= 400) status_text = "Bad Request";
-
+QByteArray RestServer::build_http_response(const QByteArray& body, int status_code, const QString& content_type) {
+    const QString status_text = status_text_for(status_code);
     QString response = QString("HTTP/1.1 %1 %2\r\n").arg(status_code).arg(status_text);
-    response += "Content-Type: application/json\r\n";
+    response += QString("Content-Type: %1\r\n").arg(content_type);
     response += "Access-Control-Allow-Origin: *\r\n";
     response += "Access-Control-Allow-Headers: Content-Type, Authorization\r\n";
     response += "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n";
     response += "Connection: close\r\n";
-    response += QString("Content-Length: %1\r\n\r\n").arg(body.toUtf8().size());
-    response += body;
-    return response;
+    response += QString("Content-Length: %1\r\n\r\n").arg(body.size());
+    return response.toUtf8() + body;
+}
+
+QByteArray RestServer::build_http_response(const QString& body, int status_code, const QString& content_type) {
+    return build_http_response(body.toUtf8(), status_code, content_type);
+}
+
+bool RestServer::is_static_asset_request(const HttpRequest& request) const {
+    if (request.method != "GET") {
+        return false;
+    }
+    return request.path == "/" ||
+           request.path == "/client" ||
+           request.path.startsWith("/client/") ||
+           request.path == "/app.js" ||
+           request.path == "/styles.css";
+}
+
+QByteArray RestServer::serve_static_asset(const QString& path) {
+    const QString relative = clean_static_path(path);
+    if (relative.startsWith("..") || relative.contains("/../")) {
+        return build_http_response(QString("{\"error\":\"Invalid static asset path\"}"), 403);
+    }
+
+    for (const QString& root : static_roots()) {
+        QFileInfo candidate(QDir(root).filePath(relative));
+        if (!candidate.exists() || !candidate.isFile()) {
+            continue;
+        }
+
+        QFile file(candidate.absoluteFilePath());
+        if (!file.open(QIODevice::ReadOnly)) {
+            return build_http_response(QString("{\"error\":\"Could not read static asset\"}"), 500);
+        }
+
+        QMimeDatabase mime_db;
+        QString content_type = mime_db.mimeTypeForFile(candidate).name();
+        if (candidate.suffix() == "js") content_type = "text/javascript";
+        if (candidate.suffix() == "css") content_type = "text/css";
+        if (candidate.suffix() == "html") content_type = "text/html; charset=utf-8";
+        return build_http_response(file.readAll(), 200, content_type);
+    }
+
+    return build_http_response(QString("{\"error\":\"Static asset not found\"}"), 404);
 }
 
 } // namespace BrainLLM
