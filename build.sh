@@ -34,7 +34,7 @@ if [ $? -eq 0 ]; then
         rm -rf output/build/client
         cp -R build/client output/build/client
     fi
-    for folder in assets data scripts tools; do
+    for folder in assets data scripts tools third_party; do
         if [ -d "build/$folder" ]; then
             rm -rf "output/build/$folder"
             cp -R "build/$folder" "output/build/$folder"

@@ -1,4 +1,5 @@
 #include "voice_panel.h"
+#include "wake_word.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -92,6 +93,7 @@ void VoiceWaveform::paintEvent(QPaintEvent*)
 // ════════════════════════════════════════════════════════════════════════════
 VoicePanel::VoicePanel(QWidget* parent)
     : QWidget(parent),
+      wake_words_(default_wake_words()),
       rec_timer_(new QTimer(this))
 {
     setStyleSheet(
@@ -107,6 +109,16 @@ VoicePanel::VoicePanel(QWidget* parent)
 void VoicePanel::set_llm_engine(std::shared_ptr<LLMEngine> engine)
 {
     llm_engine_ = std::move(engine);
+}
+
+void VoicePanel::set_wake_words(const std::vector<std::string>& wake_words)
+{
+    wake_words_ = wake_words.empty() ? default_wake_words() : wake_words;
+}
+
+void VoicePanel::set_wake_word_required(bool required)
+{
+    require_wake_word_ = required;
 }
 
 // ── build_ui ─────────────────────────────────────────────────────────────────
@@ -487,13 +499,37 @@ void VoicePanel::recognition_finished()
     mic_button_->setText("◉ MIC");
 
     if (result.success && !result.transcript.empty()) {
-        set_status("● RECOGNIZED");
         const QString transcript = QString::fromStdString(result.transcript);
-        pending_text_ = transcript;
-        emit voice_input_ready(transcript);
+        const QString command = command_from_wake_word(transcript);
+        if (command.isEmpty()) {
+            set_status("● WAITING FOR WAKE WORD", true);
+            pending_text_ = transcript;
+            return;
+        }
+
+        set_status("● RECOGNIZED");
+        pending_text_ = command;
+        emit voice_input_ready(command);
     } else {
         set_status("● NOT RECOGNIZED", true);
     }
+}
+
+QString VoicePanel::command_from_wake_word(const QString& transcript)
+{
+    const WakeWordMatch match = detect_wake_word(transcript.toStdString(), wake_words_);
+    if (!require_wake_word_) {
+        return match.activated && !match.command.empty()
+            ? QString::fromStdString(match.command).trimmed()
+            : transcript.trimmed();
+    }
+
+    if (!match.activated) {
+        return QString();
+    }
+
+    const QString command = QString::fromStdString(match.command).trimmed();
+    return command.isEmpty() ? QString("How can I help?") : command;
 }
 
 } // namespace BrainLLM

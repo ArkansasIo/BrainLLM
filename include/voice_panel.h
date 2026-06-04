@@ -8,6 +8,7 @@
 #include <QTimer>
 #include <QVector>
 #include <memory>
+#include <vector>
 #include "voice_audio_system.h"
 #include "llm_engine.h"
 
@@ -52,6 +53,8 @@ public:
     // Called by ChatWidget/MainWindow to speak a response
     void speak(const std::string& text);
     void speak_greeting();
+    void set_wake_words(const std::vector<std::string>& wake_words);
+    void set_wake_word_required(bool required);
 
 signals:
     // Emitted when voice recognition produces a transcript
@@ -74,10 +77,13 @@ private:
     void refresh_voice_list();
     void update_profile_display();
     void set_status(const QString& msg, bool error = false);
+    QString command_from_wake_word(const QString& transcript);
 
     std::shared_ptr<LLMEngine> llm_engine_;
     VoiceAudioSystem           voice_system_;
     bool                       auto_speak_responses_ = false;
+    bool                       require_wake_word_ = true;
+    std::vector<std::string>   wake_words_;
 
     // ── UI controls ──────────────────────────────────────────────────────────
     VoiceWaveform* waveform_;

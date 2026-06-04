@@ -44,6 +44,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  GET    /api/algorithms - List active local LLM algorithms" << std::endl;
     std::cout << "  POST   /api/train      - Train the model" << std::endl;
     std::cout << "  POST   /api/chat       - Chat endpoint for web/client use" << std::endl;
+    std::cout << "  POST   /api/assistant  - Wake-word assistant endpoint" << std::endl;
     std::cout << "  POST   /api/reset      - Reset brain state and memory" << std::endl;
     std::cout << "  GET/POST /api/airllm/config - Read or update AirLLM config" << std::endl;
     std::cout << "  POST   /api/wolfram    - Query Wolfram Alpha external knowledge" << std::endl;

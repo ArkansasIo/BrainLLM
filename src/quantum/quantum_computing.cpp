@@ -163,12 +163,22 @@ QuantumCircuit::QuantumCircuit(int num_qubits)
 void QuantumCircuit::add_gate(const QuantumGate& gate, int qubit) {
     GateOperation op;
     op.gate = std::make_shared<QuantumGate>(gate);
+    op.controlled_gate = nullptr;
     op.qubit1 = qubit;
+    op.qubit2 = -1;
     op.is_controlled = false;
     gates_.push_back(op);
+    depth_++;
 }
 
 void QuantumCircuit::add_controlled_gate(const ControlledGate& gate, int control, int target) {
+    GateOperation op;
+    op.gate = nullptr;
+    op.controlled_gate = std::make_shared<ControlledGate>(gate);
+    op.qubit1 = control;
+    op.qubit2 = target;
+    op.is_controlled = true;
+    gates_.push_back(op);
     depth_++;
 }
 
@@ -178,6 +188,8 @@ std::vector<int> QuantumCircuit::execute(QuantumRegister& reg) {
             Qubit q = reg.get_qubit(op.qubit1);
             Qubit new_q = op.gate->apply(q);
             reg.set_qubit(op.qubit1, new_q);
+        } else if (op.controlled_gate) {
+            op.controlled_gate->apply(reg, op.qubit1, op.qubit2);
         }
     }
     return reg.measure_all();
