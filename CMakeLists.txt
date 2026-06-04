@@ -8,28 +8,31 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Qt6 Configuration
-find_package(Qt6 COMPONENTS 
-    Core 
-    Gui 
-    Widgets 
-    Network 
+find_package(Qt6 COMPONENTS
+    Core
+    Gui
+    Widgets
+    Network
     Concurrent
     REQUIRED
 )
 
-# Core LLM Brain Library
+# ── Core LLM Brain Library ────────────────────────────────────────────────────
 add_library(brain_core
     src/brain/neural_network.cpp
     src/brain/memory_system.cpp
     src/brain/attention_mechanism.cpp
+    src/brain/wolfram_alpha_client.cpp
     src/brain/llm_engine.cpp
     src/settings/config_manager.cpp
     src/settings/data_config_system.cpp
 )
-
 target_include_directories(brain_core PUBLIC include)
+target_link_libraries(brain_core PUBLIC Qt6::Core Qt6::Network)
 
-# Advanced Brain Modules
+# ── Advanced Brain Modules ────────────────────────────────────────────────────
+# NOTE: comprehensive_brain.cpp is in brain_integration (below) to avoid
+#       a circular dependency with cognitive_linguistic.
 add_library(advanced_brain
     src/advanced/robotics_laws.cpp
     src/advanced/sentience.cpp
@@ -41,13 +44,11 @@ add_library(advanced_brain
     src/advanced/lua_scripting_system.cpp
     src/advanced/voice_audio_system.cpp
     src/advanced/safety_security.cpp
-    src/advanced/comprehensive_brain.cpp
 )
-
 target_link_libraries(advanced_brain PUBLIC brain_core)
 target_include_directories(advanced_brain PUBLIC include)
 
-# Cognitive & Linguistic Modules (v3.0)
+# ── Cognitive & Linguistic Modules ────────────────────────────────────────────
 add_library(cognitive_linguistic
     src/human_brain/cognitive_processes.cpp
     src/human_brain/english_processor.cpp
@@ -55,27 +56,37 @@ add_library(cognitive_linguistic
     src/human_brain/grammar_linguistics.cpp
     src/human_brain/integrated_cognitive_module.cpp
 )
-
 target_link_libraries(cognitive_linguistic PUBLIC brain_core advanced_brain)
 target_include_directories(cognitive_linguistic PUBLIC include)
 
-# Quantum Computing Module (v4.0)
+# ── Brain Integration ─────────────────────────────────────────────────────────
+# ComprehensiveBrain ties all modules together.
+# Dependency order (no cycles):
+#   brain_core → (none)
+#   advanced_brain → brain_core
+#   cognitive_linguistic → brain_core, advanced_brain
+#   brain_integration → brain_core, advanced_brain, cognitive_linguistic
+add_library(brain_integration
+    src/advanced/comprehensive_brain.cpp
+)
+target_link_libraries(brain_integration PUBLIC brain_core advanced_brain cognitive_linguistic)
+target_include_directories(brain_integration PUBLIC include)
+
+# ── Quantum Computing Module ──────────────────────────────────────────────────
 add_library(quantum_computing
     src/quantum/quantum_computing.cpp
 )
-
 target_link_libraries(quantum_computing PUBLIC brain_core)
 target_include_directories(quantum_computing PUBLIC include)
 
-# Quantum LLM Integration (v4.0)
+# ── Quantum LLM Integration ───────────────────────────────────────────────────
 add_library(quantum_llm
     src/quantum/quantum_llm_integration.cpp
 )
-
 target_link_libraries(quantum_llm PUBLIC brain_core cognitive_linguistic quantum_computing)
 target_include_directories(quantum_llm PUBLIC include)
 
-# REST API Server
+# ── REST API Server ───────────────────────────────────────────────────────────
 add_library(api_server
     include/rest_server.h
     include/request_handler.h
@@ -83,17 +94,24 @@ add_library(api_server
     src/api/request_handler.cpp
     src/api/endpoints.cpp
 )
-
-target_link_libraries(api_server PUBLIC brain_core advanced_brain cognitive_linguistic Qt6::Network Qt6::Core)
+target_link_libraries(api_server PUBLIC
+    brain_core
+    advanced_brain
+    brain_integration
+    cognitive_linguistic
+    Qt6::Network
+    Qt6::Core
+)
 target_include_directories(api_server PUBLIC include)
 
-# GUI Application
+# ── GUI Application ───────────────────────────────────────────────────────────
 add_executable(BrainLLM_GUI
     include/main_window.h
     include/editor_widget.h
     include/console_widget.h
     include/chat_widget.h
     include/visualization_widget.h
+    include/voice_panel.h
     include/menu_system.h
     include/settings_dialog.h
     gui/main_window.cpp
@@ -101,14 +119,15 @@ add_executable(BrainLLM_GUI
     gui/console_widget.cpp
     gui/chat_widget.cpp
     gui/visualization_widget.cpp
+    gui/voice_panel.cpp
     gui/menu_system.cpp
     gui/settings_dialog.cpp
     src/main_gui.cpp
 )
-
 target_link_libraries(BrainLLM_GUI
     brain_core
     advanced_brain
+    brain_integration
     cognitive_linguistic
     quantum_computing
     quantum_llm
@@ -119,23 +138,21 @@ target_link_libraries(BrainLLM_GUI
     Qt6::Network
     Qt6::Concurrent
 )
-
 target_include_directories(BrainLLM_GUI PUBLIC include)
 
-# API Server Executable
+# ── API Server Executable ─────────────────────────────────────────────────────
 add_executable(BrainLLM_API
     src/main_api.cpp
 )
-
 target_link_libraries(BrainLLM_API
     api_server
     brain_core
     advanced_brain
+    brain_integration
     cognitive_linguistic
     quantum_computing
     quantum_llm
     Qt6::Core
     Qt6::Network
 )
-
 target_include_directories(BrainLLM_API PUBLIC include)

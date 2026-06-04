@@ -25,6 +25,13 @@ private:
     QString handle_models(const QString& body);
     QString handle_chat_completions(const QString& body);
     QString handle_completions(const QString& body);
+    QString handle_wolfram(const QString& body);
+    QString handle_speech_status(const QString& body);
+    QString handle_speech_speak(const QString& body);
+    QString handle_speech_synthesize(const QString& body);
+    QString handle_speech_recognize(const QString& body);
+    QString handle_scripts(const QString& body);
+    QString handle_script_execute(const QString& body);
     
     // Helper methods
     QString create_json_response(const std::string& message);

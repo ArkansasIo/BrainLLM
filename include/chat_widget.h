@@ -1,9 +1,11 @@
 #pragma once
 
 #include <QWidget>
-#include <QPlainTextEdit>
+#include <QTextEdit>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
+#include <QTimer>
 #include <memory>
 #include "llm_engine.h"
 
@@ -23,14 +25,19 @@ public:
 private slots:
     void on_send_clicked();
     void on_clear_clicked();
+    void animate_typing();
 
 private:
+    void apply_hud_style();
+
     std::shared_ptr<LLMEngine> llm_engine_;
-    QLabel* title_label_;
-    QPlainTextEdit* transcript_;
-    QPlainTextEdit* input_;
+    QTextEdit*   transcript_;
+    QLineEdit*   input_;
     QPushButton* send_button_;
     QPushButton* clear_button_;
+    QLabel*      status_label_;
+    QTimer*      typing_timer_;
+    int          typing_dots_;
 };
 
 } // namespace BrainLLM

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "brain_types.h"
+#include "llm_engine.h"
+#include "integrated_cognitive_module.h"
 #include "robotics_laws.h"
 #include "sentience.h"
 #include "advanced_learning.h"
@@ -27,6 +29,8 @@ namespace BrainLLM {
  * - Dialogue management and personality
  * - Lua scripting and woman voice/audio systems
  * - Safety, security, and explainability
+ * - LLM engine with Wolfram Alpha and AirLLM inference
+ * - Integrated cognitive/linguistic module (English, grammar, multilingual)
  */
 
 class ComprehensiveBrain {
@@ -47,7 +51,7 @@ public:
     TransformerModule& get_transformer() { return *transformer_; }
     EmbeddingLayer& get_embeddings() { return *embeddings_; }
     LSTMNetwork& get_lstm() { return *lstm_; }
-    AirLLMBridge& get_airllm_bridge() { return airllm_bridge_; }
+    AirLLMBridge& get_airllm_bridge() { return llm_engine_->get_airllm_bridge(); }
     
     // Knowledge
     KnowledgeGraph& get_knowledge_graph() { return knowledge_graph_; }
@@ -68,10 +72,18 @@ public:
     HallucinationDetector& get_hallucination_detector() { return hallucination_detector_; }
     ExplainabilityModule& get_explainability_module() { return explainability_module_; }
     
-    // Process with all safeguards
+    // Language / LLM
+    LLMEngine& get_llm_engine() { return *llm_engine_; }
+    IntegratedCognitiveModule& get_cognitive_module() { return *cognitive_module_; }
+    
+    // Process with all safeguards, cognitive NLP, Wolfram Alpha, and AirLLM
     std::string process_safely(const std::string& input);
     
 private:
+    // Core LLM + cognitive/linguistic pipeline
+    std::unique_ptr<LLMEngine> llm_engine_;
+    std::unique_ptr<IntegratedCognitiveModule> cognitive_module_;
+
     // Core modules
     RoboticsLawEnforcer robotics_enforcer_;
     SentienceDetector sentience_detector_;
@@ -81,7 +93,6 @@ private:
     std::unique_ptr<TransformerModule> transformer_;
     std::unique_ptr<EmbeddingLayer> embeddings_;
     std::unique_ptr<LSTMNetwork> lstm_;
-    AirLLMBridge airllm_bridge_;
     
     // Knowledge and reasoning
     KnowledgeGraph knowledge_graph_;

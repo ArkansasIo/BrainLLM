@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QLabel>
 
 namespace BrainLLM {
 
