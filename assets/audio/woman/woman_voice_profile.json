@@ -6,6 +6,13 @@
   "pitch_hz": 220.0,
   "speaking_rate": 1.0,
   "warmth": 0.75,
+  "optional_tts_backends": [
+    {
+      "backend_id": "openjarvis_voice",
+      "path": "tools/openjarvis_voice",
+      "description": "Vendored OpenJarvis speech/TTS subset with Kokoro, OpenAI TTS, Cartesia, Whisper, Deepgram, and Faster-Whisper adapters"
+    }
+  ],
   "assets": [
     {
       "asset_id": "woman_startup",
@@ -18,5 +25,5 @@
       "description": "Bundled generated notification tone"
     }
   ],
-  "note": "These WAV tones provide bundled UI audio cues. Spoken text output is handled by the platform TTS backend when available."
+  "note": "These WAV tones provide bundled UI audio cues. Spoken text output is handled by the platform TTS backend by default; tools/openjarvis_voice provides optional vendored OpenJarvis voice backends."
 }

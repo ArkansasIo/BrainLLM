@@ -115,6 +115,7 @@ BrainLLM/
 |-- assets/audio/woman/                # Woman voice profile and WAV assets
 |-- third_party/airllm/                # Optional AIRLLM source clone
 |-- tools/airllm_runner.py             # Optional AIRLLM runner
+|-- tools/openjarvis_voice/            # Vendored OpenJarvis speech/TTS subset
 |-- CMakeLists.txt                     # Build configuration
 |-- package.json                       # Project metadata
 `-- README.md                          # This file
@@ -258,6 +259,7 @@ The application monitors:
 - Local heuristic LLM generation with memory recall
 - Wolfram Alpha routing for computational prompts when configured
 - Optional AirLLM subprocess bridge with runtime configuration
+- Optional OpenJarvis voice subset under `tools/openjarvis_voice`
 - Qt GUI and REST API server
 - Browser client served from the API server
 - English, grammar, multilingual, cognitive, safety, script, voice, and quantum modules
