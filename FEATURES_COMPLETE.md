@@ -141,7 +141,7 @@ class SentienceDetector {
 - **SQL Layout**: SQLite-compatible schema for brain objects, memory, dialogue, scripts, audio, and audit logs
 - **Spreadsheet Layout**: Excel-compatible CSV schema export
 - **Lua Scripting**: Script and subscript registry with bootstrap generation
-- **Woman Voice System**: Voice profile metadata and placeholder WAV audio assets
+- **Woman Voice System**: Voice profile metadata, bundled WAV cues, and platform TTS integration
 
 #### 8. Comprehensive Brain Integration
 - Unifies all v1.0 + v2.0 components

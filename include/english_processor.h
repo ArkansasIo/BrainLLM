@@ -116,6 +116,7 @@ private:
     std::map<std::string, PartOfSpeech> pos_dictionary_;
     std::map<std::string, std::string> lemma_dictionary_;
     std::map<std::string, float> word_frequencies_;
+    std::map<std::string, std::vector<std::string>> extended_synonyms_;
     std::vector<std::string> common_stop_words_;
     
     void initialize_dictionaries();

@@ -5,6 +5,39 @@
 
 namespace BrainLLM {
 
+namespace {
+
+std::string json_escape(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+
+    for (const unsigned char c : value) {
+        switch (c) {
+            case '\\': escaped += "\\\\"; break;
+            case '"': escaped += "\\\""; break;
+            case '\b': escaped += "\\b"; break;
+            case '\f': escaped += "\\f"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    const char hex[] = "0123456789abcdef";
+                    escaped += "\\u00";
+                    escaped += hex[(c >> 4) & 0x0f];
+                    escaped += hex[c & 0x0f];
+                } else {
+                    escaped += static_cast<char>(c);
+                }
+                break;
+        }
+    }
+
+    return escaped;
+}
+
+} // namespace
+
 LuaScriptingSystem::LuaScriptingSystem() {
     register_script({
         "system_bootstrap",
@@ -198,24 +231,24 @@ ScriptExecutionResult LuaScriptingSystem::execute_script(
 
     std::ostringstream output;
     output << "{"
-           << "\"script_id\":\"" << it->second.script_id << "\","
-           << "\"path\":\"" << it->second.script_path << "\","
-           << "\"entry_point\":\"" << it->second.entry_point << "\","
-           << "\"action\":\"" << action << "\"";
+           << "\"script_id\":\"" << json_escape(it->second.script_id) << "\","
+           << "\"path\":\"" << json_escape(it->second.script_path) << "\","
+           << "\"entry_point\":\"" << json_escape(it->second.entry_point) << "\","
+           << "\"action\":\"" << json_escape(action) << "\"";
     if (!endpoint.empty()) {
-        output << ",\"api\":\"" << endpoint << "\"";
+        output << ",\"api\":\"" << json_escape(endpoint) << "\"";
     }
     output << ",\"profile\":\"woman_default\"";
-    output << ",\"text\":\"" << arg_or("text", arg_or("assistant_text", "BrainLLM is ready.")) << "\"";
-    output << ",\"output_path\":\"" << arg_or("output_path", "assets/audio/woman/generated_response.wav") << "\"";
-    output << ",\"timeout_seconds\":\"" << arg_or("timeout_seconds", "6") << "\"";
+    output << ",\"text\":\"" << json_escape(arg_or("text", arg_or("assistant_text", "BrainLLM is ready."))) << "\"";
+    output << ",\"output_path\":\"" << json_escape(arg_or("output_path", "assets/audio/woman/generated_response.wav")) << "\"";
+    output << ",\"timeout_seconds\":\"" << json_escape(arg_or("timeout_seconds", "6")) << "\"";
     output << ",\"args\":{";
     bool first_arg = true;
     for (const auto& arg : args) {
         if (!first_arg) {
             output << ",";
         }
-        output << "\"" << arg.first << "\":\"" << arg.second << "\"";
+        output << "\"" << json_escape(arg.first) << "\":\"" << json_escape(arg.second) << "\"";
         first_arg = false;
     }
     output << "}}";

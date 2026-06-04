@@ -40,7 +40,12 @@ int main(int argc, char* argv[]) {
     std::cout << "  GET    /api/status     - Get brain status and metrics" << std::endl;
     std::cout << "  GET    /api/memory     - Query memory" << std::endl;
     std::cout << "  GET    /api/config     - Get current configuration" << std::endl;
+    std::cout << "  GET    /api/endpoints  - List available API endpoints" << std::endl;
+    std::cout << "  GET    /api/algorithms - List active local LLM algorithms" << std::endl;
     std::cout << "  POST   /api/train      - Train the model" << std::endl;
+    std::cout << "  POST   /api/chat       - Chat endpoint for web/client use" << std::endl;
+    std::cout << "  POST   /api/reset      - Reset brain state and memory" << std::endl;
+    std::cout << "  GET/POST /api/airllm/config - Read or update AirLLM config" << std::endl;
     std::cout << "  POST   /api/wolfram    - Query Wolfram Alpha external knowledge" << std::endl;
     std::cout << "  GET    /api/speech/status - Get speech backend status" << std::endl;
     std::cout << "  POST   /api/speech/speak - Speak text through OS text-to-speech" << std::endl;
@@ -51,6 +56,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  GET    /v1/models      - OpenAI-style model list" << std::endl;
     std::cout << "  POST   /v1/completions - OpenAI-style text completion" << std::endl;
     std::cout << "  POST   /v1/chat/completions - OpenAI-style chat completion" << std::endl;
+    std::cout << "  GET    /client         - Browser client UI" << std::endl;
     
     std::cout << "\nServer running... Press Ctrl+C to stop" << std::endl;
 

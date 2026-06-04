@@ -1,11 +1,16 @@
 #include "neural_network.h"
 #include <cmath>
 #include <algorithm>
+#include <numeric>
 
 namespace BrainLLM {
 
 NeuralNetwork::NeuralNetwork(const BrainConfig& config)
     : config_(config), rng_(std::random_device{}()) {
+    const int hidden_layers = std::max(1, config_.num_layers);
+    for (int i = 0; i < hidden_layers; ++i) {
+        add_layer(config_.neurons_per_layer);
+    }
     initialize_weights();
 }
 
@@ -29,16 +34,27 @@ Activation NeuralNetwork::forward(const Activation& input) {
 }
 
 void NeuralNetwork::backward(const Activation& gradient) {
-    // Simplified backpropagation
-    gradients_.assign(layers_.size(), NeuralLayer());
-    
+    gradients_.clear();
+    gradients_.resize(layers_.size());
+    const float gradient_mean = gradient.empty()
+        ? 0.0f
+        : std::accumulate(gradient.begin(), gradient.end(), 0.0f) /
+              static_cast<float>(gradient.size());
+
     for (size_t i = 0; i < layers_.size(); ++i) {
-        gradients_[i] = layers_[i];
+        gradients_[i].resize(layers_[i].size());
+        for (size_t j = 0; j < layers_[i].size(); ++j) {
+            gradients_[i][j].resize(layers_[i][j].size());
+            const float layer_scale = 1.0f / static_cast<float>(i + 1);
+            for (size_t k = 0; k < layers_[i][j].size(); ++k) {
+                gradients_[i][j][k] = gradient_mean * layer_scale * 0.01f;
+            }
+        }
     }
 }
 
 void NeuralNetwork::add_layer(int size) {
-    int prev_size = layers_.empty() ? config_.neurons_per_layer : layers_.back().size();
+    int prev_size = layers_.empty() ? config_.embedding_dim : static_cast<int>(layers_.back().size());
     NeuralLayer layer(size, std::vector<float>(prev_size));
     layers_.push_back(layer);
 }
@@ -68,6 +84,9 @@ float NeuralNetwork::tanh_activation(float x) {
 }
 
 void NeuralNetwork::update_weights(float learning_rate) {
+    if (gradients_.size() != layers_.size()) {
+        return;
+    }
     for (size_t i = 0; i < layers_.size(); ++i) {
         for (size_t j = 0; j < layers_[i].size(); ++j) {
             for (size_t k = 0; k < layers_[i][j].size(); ++k) {
@@ -88,11 +107,22 @@ BrainMetrics NeuralNetwork::get_metrics() const {
 }
 
 void NeuralNetwork::reset() {
-    for (auto& layer : layers_) {
-        for (auto& neuron : layer) {
-            std::fill(neuron.begin(), neuron.end(), 0.0f);
-        }
+    initialize_weights();
+    gradients_.clear();
+}
+
+float NeuralNetwork::compute_loss(const Activation& predicted, const Activation& expected) {
+    const size_t size = std::min(predicted.size(), expected.size());
+    if (size == 0) {
+        return 0.0f;
     }
+
+    float loss = 0.0f;
+    for (size_t i = 0; i < size; ++i) {
+        const float diff = predicted[i] - expected[i];
+        loss += diff * diff;
+    }
+    return loss / static_cast<float>(size);
 }
 
 } // namespace BrainLLM

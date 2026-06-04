@@ -1,6 +1,47 @@
 #include "integrated_cognitive_module.h"
+#include <algorithm>
+#include <cctype>
+#include <sstream>
 
 namespace BrainLLM {
+
+namespace {
+
+std::string trim_copy(std::string value) {
+    auto not_space = [](unsigned char c) { return !std::isspace(c); };
+    value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+    value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+    return value;
+}
+
+std::vector<std::string> keywords_from_text(const std::string& text, size_t limit = 6) {
+    static const std::vector<std::string> stop_words = {
+        "the", "and", "for", "that", "this", "with", "from", "you", "your",
+        "are", "was", "were", "have", "has", "had", "what", "why", "how"
+    };
+
+    std::vector<std::string> keywords;
+    std::istringstream stream(text);
+    std::string word;
+    while (stream >> word) {
+        word.erase(std::remove_if(word.begin(), word.end(), [](unsigned char c) {
+            return !std::isalnum(c);
+        }), word.end());
+        std::transform(word.begin(), word.end(), word.begin(), ::tolower);
+        if (word.size() < 3 || std::find(stop_words.begin(), stop_words.end(), word) != stop_words.end()) {
+            continue;
+        }
+        if (std::find(keywords.begin(), keywords.end(), word) == keywords.end()) {
+            keywords.push_back(word);
+        }
+        if (keywords.size() >= limit) {
+            break;
+        }
+    }
+    return keywords;
+}
+
+} // namespace
 
 IntegratedCognitiveModule::IntegratedCognitiveModule()
     : verbose_logging_(false) {
@@ -174,7 +215,29 @@ IntegratedCognitiveModule::GrammarCorrection IntegratedCognitiveModule::check_an
     
     correction.errors = grammar_analyzer_->check_grammar(text);
     correction.has_errors = !correction.errors.empty();
-    correction.corrected_text = text;  // Placeholder
+    correction.corrected_text = trim_copy(text);
+
+    for (const auto& error : correction.errors) {
+        if (error.error_type == "missing_terminal_punctuation" && !correction.corrected_text.empty()) {
+            correction.corrected_text += ".";
+        } else if (error.error_type == "subject_verb_disagreement") {
+            std::string lower = correction.corrected_text;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            const std::vector<std::pair<std::string, std::string>> replacements = {
+                {" i is ", " I am "},
+                {" they is ", " they are "},
+                {" we is ", " we are "},
+                {" you is ", " you are "}
+            };
+            for (const auto& [needle, replacement] : replacements) {
+                const size_t pos = lower.find(needle);
+                if (pos != std::string::npos) {
+                    correction.corrected_text.replace(pos, needle.size(), replacement);
+                    break;
+                }
+            }
+        }
+    }
     
     return correction;
 }
@@ -197,6 +260,9 @@ IntegratedCognitiveModule::ProcessedInput IntegratedCognitiveModule::understand_
     input.understood_meaning = input.english_analysis.main_idea;
     input.understanding_confidence = calculate_understanding_confidence(user_text);
     input.key_topics = input.english_analysis.entities;
+    if (input.key_topics.empty()) {
+        input.key_topics = keywords_from_text(user_text);
+    }
     
     if (verbose_logging_) {
         log_cognitive_activity("Understood input: " + input.understood_meaning);
@@ -239,7 +305,10 @@ void IntegratedCognitiveModule::sleep_and_consolidate() {
 }
 
 void IntegratedCognitiveModule::increase_cognitive_load(float amount) {
-    // Simplified implementation
+    const int synthetic_items = std::max(1, static_cast<int>(amount * 4.0f));
+    for (int i = 0; i < synthetic_items; ++i) {
+        cognitive_processor_->add_to_working_memory("cognitive-load:" + std::to_string(amount) + ":" + std::to_string(i));
+    }
     if (verbose_logging_) {
         log_cognitive_activity("Cognitive load increased by " + std::to_string(amount));
     }

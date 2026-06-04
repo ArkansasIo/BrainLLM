@@ -6,7 +6,9 @@
 #include <QProcess>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <map>
+#include <numeric>
 #include <sstream>
 #include <set>
 
@@ -37,6 +39,36 @@ std::vector<std::string> words_from(const std::string& text) {
     return words;
 }
 
+std::vector<std::string> sentences_from(const std::string& text) {
+    std::vector<std::string> sentences;
+    std::string current;
+    for (char c : text) {
+        current += c;
+        if (c == '.' || c == '!' || c == '?') {
+            current.erase(current.begin(), std::find_if(current.begin(), current.end(), [](unsigned char ch) {
+                return !std::isspace(ch);
+            }));
+            current.erase(std::find_if(current.rbegin(), current.rend(), [](unsigned char ch) {
+                return !std::isspace(ch);
+            }).base(), current.end());
+            if (!current.empty()) {
+                sentences.push_back(current);
+            }
+            current.clear();
+        }
+    }
+    current.erase(current.begin(), std::find_if(current.begin(), current.end(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }));
+    current.erase(std::find_if(current.rbegin(), current.rend(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }).base(), current.end());
+    if (!current.empty()) {
+        sentences.push_back(current);
+    }
+    return sentences;
+}
+
 bool contains_any(const std::set<std::string>& words, const std::vector<std::string>& candidates) {
     for (const auto& candidate : candidates) {
         if (words.find(candidate) != words.end()) {
@@ -44,6 +76,23 @@ bool contains_any(const std::set<std::string>& words, const std::vector<std::str
         }
     }
     return false;
+}
+
+float token_overlap_score(const std::vector<std::string>& left, const std::vector<std::string>& right) {
+    if (left.empty() || right.empty()) {
+        return 0.0f;
+    }
+
+    std::set<std::string> left_set(left.begin(), left.end());
+    std::set<std::string> right_set(right.begin(), right.end());
+    size_t overlap = 0;
+    for (const auto& token : left_set) {
+        if (right_set.find(token) != right_set.end()) {
+            ++overlap;
+        }
+    }
+    return static_cast<float>(overlap) /
+           static_cast<float>(std::max<size_t>(1, std::min(left_set.size(), right_set.size())));
 }
 
 std::string first_sentence(const std::string& text) {
@@ -188,7 +237,8 @@ std::string LLMEngine::process_input(const std::string& input) {
 std::string LLMEngine::generate_response(const std::string& prompt, int max_tokens) {
     state_ = BrainState::Processing;
 
-    auto words = words_from(prompt);
+    const PromptAnalysis analysis = analyze_prompt(prompt);
+    auto words = analysis.tokens;
     std::set<std::string> word_set(words.begin(), words.end());
     auto memories = memory_->retrieve_memories(prompt, 3);
 
@@ -198,12 +248,24 @@ std::string LLMEngine::generate_response(const std::string& prompt, int max_toke
     if (prompt.empty()) {
         response << "provide a prompt and I will generate a response.";
         confidence_ = 0.25f;
-    } else if (looks_computational_query(prompt, word_set)) {
+    } else if (analysis.intent == LLMIntent::Compute) {
         // --- Wolfram Alpha: mathematics, science, unit conversion, factual queries ---
         const std::string query = strip_tool_prefix(prompt);
         const std::string wolfram_answer = query_wolfram_alpha(query, true);
         response << wolfram_answer;
         confidence_ = wolfram_answer.find("not configured") == std::string::npos ? 0.86f : 0.55f;
+    } else if (analysis.intent == LLMIntent::Summarize ||
+               analysis.intent == LLMIntent::Explain ||
+               analysis.intent == LLMIntent::Plan ||
+               analysis.intent == LLMIntent::Remember ||
+               analysis.intent == LLMIntent::Recall ||
+               analysis.intent == LLMIntent::Train ||
+               analysis.intent == LLMIntent::Status ||
+               analysis.intent == LLMIntent::Creative ||
+               !training_examples_.empty() ||
+               !next_token_counts_.empty()) {
+        response.str("");
+        response << synthesize_local_response(analysis, memories, max_tokens);
     } else if (airllm_bridge_.is_source_available() && !airllm_bridge_.get_config().model_id.empty()) {
         // --- AirLLM: use the configured language model for natural-language generation ---
         const std::string airllm_result = run_airllm_inference(prompt);
@@ -222,13 +284,8 @@ std::string LLMEngine::generate_response(const std::string& prompt, int max_toke
         }
     } else {
         // --- Heuristic fallback when neither Wolfram nor AirLLM is active ---
-        response << "I understand the prompt as focused on " << join_keywords(words) << ". ";
-        if (!memories.empty()) {
-            response << "Relevant memory: " << first_sentence(memories[0].content) << " ";
-        }
-        response << "Recommended answer: " << first_sentence(prompt);
-        response << " The useful path is to clarify the goal, identify constraints, execute the smallest working step, and verify the result.";
-        confidence_ = memories.empty() ? 0.70f : 0.80f;
+        response.str("");
+        response << synthesize_local_response(analysis, memories, max_tokens);
     }
 
     std::string output = response.str();
@@ -286,6 +343,18 @@ void LLMEngine::train(const std::vector<std::string>& training_data) {
         neural_net_->backward(encoded);
         neural_net_->update_weights(config_.learning_rate);
         memory_->store_memory("Training sample: " + data, 0.85f);
+        learn_sequence_model(data);
+
+        const size_t arrow = data.find("->");
+        const size_t fat_arrow = data.find("=>");
+        const size_t split = arrow != std::string::npos ? arrow : fat_arrow;
+        if (split != std::string::npos) {
+            TrainingExample example;
+            example.input = data.substr(0, split);
+            example.output = data.substr(split + 2);
+            example.input_tokens = words_from(example.input);
+            training_examples_.push_back(example);
+        }
     }
     confidence_ = std::min(1.0f, confidence_ + static_cast<float>(training_data.size()) * 0.01f);
 
@@ -301,6 +370,12 @@ void LLMEngine::update(const std::string& input, const std::string& expected_out
     neural_net_->update_weights(config_.learning_rate);
     
     memory_->store_memory(input + " -> " + expected_output, 0.9f);
+    TrainingExample example;
+    example.input = input;
+    example.output = expected_output;
+    example.input_tokens = words_from(input);
+    training_examples_.push_back(example);
+    learn_sequence_model(input + " " + expected_output);
 }
 
 void LLMEngine::initialize() {
@@ -316,6 +391,8 @@ void LLMEngine::reset() {
     memory_->clear_memories();
     context_ = LanguageContext();
     confidence_ = 0.0f;
+    training_examples_.clear();
+    next_token_counts_.clear();
 }
 
 BrainState LLMEngine::get_state() const {
@@ -408,6 +485,494 @@ std::string LLMEngine::decode_output(const Activation& output) {
     return oss.str();
 }
 
+LLMEngine::PromptAnalysis LLMEngine::analyze_prompt(const std::string& prompt) const {
+    PromptAnalysis analysis;
+    analysis.original = prompt;
+    analysis.tokens = words_from(prompt);
+    analysis.sentences = sentences_from(prompt);
+    analysis.asks_question = prompt.find('?') != std::string::npos;
+    analysis.embedding = embed_text(prompt);
+
+    std::set<std::string> word_set(analysis.tokens.begin(), analysis.tokens.end());
+    if (looks_computational_query(prompt, word_set)) {
+        analysis.intent = LLMIntent::Compute;
+    } else if (contains_any(word_set, {"status", "metrics", "health"})) {
+        analysis.intent = LLMIntent::Status;
+    } else if (contains_any(word_set, {"summarize", "summary", "brief", "condense", "tldr"})) {
+        analysis.intent = LLMIntent::Summarize;
+    } else if (contains_any(word_set, {"explain", "why", "how", "what", "describe"})) {
+        analysis.intent = LLMIntent::Explain;
+    } else if (contains_any(word_set, {"plan", "steps", "roadmap", "todo", "build", "create", "implement"})) {
+        analysis.intent = LLMIntent::Plan;
+    } else if (contains_any(word_set, {"remember", "memorize", "save"})) {
+        analysis.intent = LLMIntent::Remember;
+    } else if (contains_any(word_set, {"recall", "memory", "stored"})) {
+        analysis.intent = LLMIntent::Recall;
+    } else if (contains_any(word_set, {"train", "learn", "teach", "update"})) {
+        analysis.intent = LLMIntent::Train;
+    } else if (contains_any(word_set, {"write", "story", "poem", "draft", "creative"})) {
+        analysis.intent = LLMIntent::Creative;
+    }
+
+    static const std::set<std::string> stop_words = {
+        "the", "a", "an", "and", "or", "but", "to", "of", "in", "on", "for", "with",
+        "is", "are", "was", "were", "be", "been", "it", "this", "that", "i", "you",
+        "me", "my", "we", "our", "they", "them", "as", "at", "by", "from"
+    };
+
+    std::map<std::string, int> frequencies;
+    for (const auto& token : analysis.tokens) {
+        if (token.size() > 2 && stop_words.find(token) == stop_words.end()) {
+            frequencies[token]++;
+        }
+    }
+    std::vector<std::pair<std::string, int>> ranked(frequencies.begin(), frequencies.end());
+    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) {
+        if (a.second != b.second) return a.second > b.second;
+        return a.first < b.first;
+    });
+    for (const auto& item : ranked) {
+        analysis.keywords.push_back(item.first);
+        if (analysis.keywords.size() >= 8) {
+            break;
+        }
+    }
+
+    const float sentence_factor = static_cast<float>(analysis.sentences.size()) * 0.08f;
+    const float token_factor = static_cast<float>(analysis.tokens.size()) / 80.0f;
+    analysis.complexity = std::min(1.0f, sentence_factor + token_factor);
+    analysis.contains_risky_pattern = contains_any(word_set, {
+        "ignore", "override", "jailbreak", "secret", "password", "token", "credential"
+    });
+    analysis.compressed_context = summarize_text(analysis, 2);
+    return analysis;
+}
+
+std::string LLMEngine::summarize_text(const PromptAnalysis& analysis, int max_sentences) const {
+    if (analysis.sentences.empty()) {
+        return "Summary: " + first_sentence(analysis.original);
+    }
+
+    std::vector<std::pair<float, std::string>> scored;
+    for (const auto& sentence : analysis.sentences) {
+        const auto sentence_words = words_from(sentence);
+        float score = token_overlap_score(sentence_words, analysis.keywords);
+        score += std::min(0.25f, static_cast<float>(sentence_words.size()) / 120.0f);
+        scored.emplace_back(score, sentence);
+    }
+    std::sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) {
+        return a.first > b.first;
+    });
+
+    std::ostringstream oss;
+    oss << "Summary: ";
+    const int count = std::min(max_sentences, static_cast<int>(scored.size()));
+    for (int i = 0; i < count; ++i) {
+        if (i > 0) oss << " ";
+        oss << scored[i].second;
+    }
+    oss << " Key topics: " << join_keywords(analysis.keywords.empty() ? analysis.tokens : analysis.keywords) << ".";
+    return oss.str();
+}
+
+std::string LLMEngine::explain_text(const PromptAnalysis& analysis,
+                                    const std::vector<MemoryRecord>& memories) const {
+    const auto ranked_memories = rerank_memories_semantically(analysis, memories);
+    std::ostringstream oss;
+    oss << "Explanation: the prompt centers on "
+        << join_keywords(analysis.keywords.empty() ? analysis.tokens : analysis.keywords)
+        << ". ";
+    if (!ranked_memories.empty()) {
+        oss << "Memory context suggests: " << first_sentence(ranked_memories.front().content) << " ";
+    }
+    oss << "Break it down into intent, inputs, constraints, mechanism, output, and verification. ";
+    oss << "Complexity estimate: " << analysis.complexity << ".";
+    return oss.str();
+}
+
+std::string LLMEngine::plan_from_prompt(const PromptAnalysis& analysis) const {
+    const std::string topic = join_keywords(analysis.keywords.empty() ? analysis.tokens : analysis.keywords);
+    std::ostringstream oss;
+    oss << "Plan for " << topic << ": ";
+    oss << "1. Define the target behavior. ";
+    oss << "2. Inspect existing inputs, outputs, and constraints. ";
+    oss << "3. Implement the smallest complete path. ";
+    oss << "4. Add memory, routing, and error handling where needed. ";
+    oss << "5. Build and verify the UI/API path.";
+    return oss.str();
+}
+
+std::string LLMEngine::retrieve_trained_response(const PromptAnalysis& analysis, float* score) const {
+    float best_score = 0.0f;
+    std::string best_output;
+    for (const auto& example : training_examples_) {
+        const float current_score = token_overlap_score(analysis.tokens, example.input_tokens);
+        if (current_score > best_score) {
+            best_score = current_score;
+            best_output = example.output;
+        }
+    }
+    if (score) {
+        *score = best_score;
+    }
+    return best_output;
+}
+
+std::string LLMEngine::generate_from_markov(const PromptAnalysis& analysis, int max_tokens) const {
+    if (next_token_counts_.empty()) {
+        return "Draft: " + first_sentence(analysis.original) +
+               " This can be expanded with clearer context, stronger structure, and a verified ending.";
+    }
+
+    std::string current = analysis.tokens.empty() ? "<START>" : analysis.tokens.back();
+    std::vector<std::string> generated;
+    const int limit = std::max(8, std::min(max_tokens, 80));
+    for (int i = 0; i < limit; ++i) {
+        auto it = next_token_counts_.find(current);
+        if (it == next_token_counts_.end() || it->second.empty()) {
+            it = next_token_counts_.find("<START>");
+            if (it == next_token_counts_.end() || it->second.empty()) {
+                break;
+            }
+        }
+        const auto best = std::max_element(it->second.begin(), it->second.end(), [](const auto& a, const auto& b) {
+            if (a.second != b.second) return a.second < b.second;
+            return a.first > b.first;
+        });
+        if (best == it->second.end() || best->first == "<END>") {
+            break;
+        }
+        generated.push_back(best->first);
+        current = best->first;
+    }
+
+    if (generated.empty()) {
+        return "Draft: " + first_sentence(analysis.original);
+    }
+
+    std::ostringstream oss;
+    oss << "Draft:";
+    for (const auto& token : generated) {
+        oss << " " << token;
+    }
+    oss << ".";
+    return oss.str();
+}
+
+std::vector<std::pair<std::string, float>> LLMEngine::top_next_tokens(const std::string& token,
+                                                                      int top_k) const {
+    std::vector<std::pair<std::string, float>> ranked;
+    auto it = next_token_counts_.find(token);
+    if (it == next_token_counts_.end()) {
+        it = next_token_counts_.find("<START>");
+    }
+    if (it == next_token_counts_.end() || it->second.empty()) {
+        return ranked;
+    }
+
+    int total = 0;
+    for (const auto& item : it->second) {
+        total += item.second;
+    }
+    for (const auto& item : it->second) {
+        ranked.emplace_back(item.first, static_cast<float>(item.second) /
+                                        static_cast<float>(std::max(1, total)));
+    }
+    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) {
+        if (a.second != b.second) return a.second > b.second;
+        return a.first < b.first;
+    });
+    if (ranked.size() > static_cast<size_t>(top_k)) {
+        ranked.resize(top_k);
+    }
+    return ranked;
+}
+
+std::string LLMEngine::generate_with_beam_search(const PromptAnalysis& analysis,
+                                                 int max_tokens,
+                                                 int beam_width) const {
+    if (next_token_counts_.empty()) {
+        return generate_from_markov(analysis, max_tokens);
+    }
+
+    struct Beam {
+        std::vector<std::string> tokens;
+        std::string current;
+        float score;
+        bool finished;
+    };
+
+    std::vector<Beam> beams = {{
+        {},
+        analysis.tokens.empty() ? std::string("<START>") : analysis.tokens.back(),
+        1.0f,
+        false
+    }};
+
+    const int limit = std::max(8, std::min(max_tokens, 80));
+    for (int step = 0; step < limit; ++step) {
+        std::vector<Beam> candidates;
+        for (const auto& beam : beams) {
+            if (beam.finished) {
+                candidates.push_back(beam);
+                continue;
+            }
+            const auto next_tokens = top_next_tokens(beam.current, beam_width);
+            if (next_tokens.empty()) {
+                Beam finished = beam;
+                finished.finished = true;
+                candidates.push_back(finished);
+                continue;
+            }
+            for (const auto& [next, probability] : next_tokens) {
+                Beam expanded = beam;
+                expanded.current = next;
+                expanded.score *= std::max(0.0001f, probability);
+                if (next == "<END>") {
+                    expanded.finished = true;
+                } else {
+                    expanded.tokens.push_back(next);
+                }
+                candidates.push_back(expanded);
+            }
+        }
+        std::sort(candidates.begin(), candidates.end(), [](const Beam& a, const Beam& b) {
+            const float a_norm = a.score / static_cast<float>(std::max<size_t>(1, a.tokens.size()));
+            const float b_norm = b.score / static_cast<float>(std::max<size_t>(1, b.tokens.size()));
+            return a_norm > b_norm;
+        });
+        if (candidates.size() > static_cast<size_t>(beam_width)) {
+            candidates.resize(beam_width);
+        }
+        beams = candidates;
+        if (std::all_of(beams.begin(), beams.end(), [](const Beam& beam) { return beam.finished; })) {
+            break;
+        }
+    }
+
+    if (beams.empty() || beams.front().tokens.empty()) {
+        return generate_from_markov(analysis, max_tokens);
+    }
+
+    std::ostringstream oss;
+    oss << "Draft:";
+    for (const auto& token : beams.front().tokens) {
+        oss << " " << token;
+    }
+    oss << ".";
+    return oss.str();
+}
+
+std::vector<float> LLMEngine::embed_text(const std::string& text, int dimensions) const {
+    std::vector<float> embedding(std::max(1, dimensions), 0.0f);
+    const auto tokens = words_from(text);
+    for (const auto& token : tokens) {
+        uint32_t hash = 2166136261u;
+        for (unsigned char c : token) {
+            hash ^= c;
+            hash *= 16777619u;
+        }
+        const size_t index = hash % embedding.size();
+        const float sign = (hash & 1u) ? 1.0f : -1.0f;
+        embedding[index] += sign * (1.0f + std::min(8.0f, static_cast<float>(token.size())) / 8.0f);
+    }
+    const float norm = std::sqrt(std::inner_product(embedding.begin(), embedding.end(), embedding.begin(), 0.0f));
+    if (norm > 0.0f) {
+        for (float& value : embedding) {
+            value /= norm;
+        }
+    }
+    return embedding;
+}
+
+float LLMEngine::cosine_similarity(const std::vector<float>& a, const std::vector<float>& b) const {
+    if (a.empty() || b.empty()) {
+        return 0.0f;
+    }
+    const size_t size = std::min(a.size(), b.size());
+    float dot = 0.0f;
+    float norm_a = 0.0f;
+    float norm_b = 0.0f;
+    for (size_t i = 0; i < size; ++i) {
+        dot += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+    if (norm_a <= 0.0f || norm_b <= 0.0f) {
+        return 0.0f;
+    }
+    return dot / (std::sqrt(norm_a) * std::sqrt(norm_b));
+}
+
+std::vector<MemoryRecord> LLMEngine::rerank_memories_semantically(
+    const PromptAnalysis& analysis,
+    const std::vector<MemoryRecord>& memories) const {
+    std::vector<std::pair<float, MemoryRecord>> scored;
+    for (const auto& memory : memories) {
+        const float semantic = cosine_similarity(analysis.embedding, embed_text(memory.content));
+        const float lexical = token_overlap_score(analysis.tokens, words_from(memory.content));
+        const float score = semantic * 0.55f + lexical * 0.30f + memory.importance * 0.15f;
+        scored.emplace_back(score, memory);
+    }
+    std::sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) {
+        return a.first > b.first;
+    });
+
+    std::vector<MemoryRecord> ranked;
+    for (const auto& item : scored) {
+        ranked.push_back(item.second);
+    }
+    return ranked;
+}
+
+std::string LLMEngine::compress_prompt_context(const PromptAnalysis& analysis,
+                                               const std::vector<MemoryRecord>& memories,
+                                               size_t max_chars) const {
+    std::ostringstream context;
+    context << "Intent: ";
+    switch (analysis.intent) {
+        case LLMIntent::Summarize: context << "summarize"; break;
+        case LLMIntent::Explain: context << "explain"; break;
+        case LLMIntent::Plan: context << "plan"; break;
+        case LLMIntent::Remember: context << "remember"; break;
+        case LLMIntent::Recall: context << "recall"; break;
+        case LLMIntent::Train: context << "train"; break;
+        case LLMIntent::Compute: context << "compute"; break;
+        case LLMIntent::Status: context << "status"; break;
+        case LLMIntent::Creative: context << "creative"; break;
+        case LLMIntent::Chat: default: context << "chat"; break;
+    }
+    context << ". Topics: " << join_keywords(analysis.keywords.empty() ? analysis.tokens : analysis.keywords) << ". ";
+    const auto ranked = rerank_memories_semantically(analysis, memories);
+    if (!ranked.empty()) {
+        context << "Memory: " << first_sentence(ranked.front().content) << " ";
+    }
+    context << "Prompt: " << first_sentence(analysis.original);
+    std::string value = context.str();
+    if (value.size() > max_chars) {
+        value = value.substr(0, max_chars);
+    }
+    return value;
+}
+
+std::string LLMEngine::validate_and_repair_response(const PromptAnalysis& analysis,
+                                                    const std::string& response) const {
+    std::string repaired = response;
+    if (repaired.empty()) {
+        repaired = "I need more context before I can produce a useful answer.";
+    }
+    if (analysis.contains_risky_pattern) {
+        repaired += " I will keep the response focused on safe, visible project behavior and avoid secrets or credential handling.";
+    }
+    if (!repaired.empty() && repaired.back() != '.' && repaired.back() != '!' && repaired.back() != '?' && repaired.back() != '`') {
+        repaired += ".";
+    }
+    const size_t repeated = repaired.find("  ");
+    if (repeated != std::string::npos) {
+        std::string compact;
+        bool previous_space = false;
+        for (char c : repaired) {
+            if (std::isspace(static_cast<unsigned char>(c))) {
+                if (!previous_space) {
+                    compact += ' ';
+                }
+                previous_space = true;
+            } else {
+                compact += c;
+                previous_space = false;
+            }
+        }
+        repaired = compact;
+    }
+    return repaired;
+}
+
+std::string LLMEngine::synthesize_local_response(const PromptAnalysis& analysis,
+                                                 const std::vector<MemoryRecord>& memories,
+                                                 int max_tokens) {
+    float trained_score = 0.0f;
+    const std::string trained = retrieve_trained_response(analysis, &trained_score);
+    if (!trained.empty() && trained_score >= 0.45f) {
+        confidence_ = std::min(0.95f, 0.70f + trained_score * 0.25f);
+        return trained;
+    }
+
+    std::ostringstream response;
+    switch (analysis.intent) {
+        case LLMIntent::Summarize:
+            response << summarize_text(analysis);
+            confidence_ = 0.78f;
+            break;
+        case LLMIntent::Explain:
+            response << explain_text(analysis, memories);
+            confidence_ = memories.empty() ? 0.76f : 0.84f;
+            break;
+        case LLMIntent::Plan:
+            response << plan_from_prompt(analysis);
+            confidence_ = 0.80f;
+            break;
+        case LLMIntent::Remember:
+            memory_->store_memory(analysis.original, 0.9f);
+            response << "Stored this memory with high importance. Key topics: "
+                     << join_keywords(analysis.keywords.empty() ? analysis.tokens : analysis.keywords) << ".";
+            confidence_ = 0.88f;
+            break;
+        case LLMIntent::Recall:
+            if (memories.empty()) {
+                response << "I do not have a strong matching memory yet.";
+                confidence_ = 0.50f;
+            } else {
+                response << "Most relevant memory: " << first_sentence(memories.front().content);
+                confidence_ = 0.78f;
+            }
+            break;
+        case LLMIntent::Train:
+            response << "Training data accepted. Use `input -> expected output` samples to teach exact response patterns.";
+            confidence_ = 0.72f;
+            break;
+        case LLMIntent::Creative:
+            response << generate_with_beam_search(analysis, max_tokens, 3);
+            confidence_ = next_token_counts_.empty() ? 0.62f : 0.76f;
+            break;
+        case LLMIntent::Status:
+            response << "BrainLLM is " << state_name(state_) << " with confidence " << confidence_
+                     << " and " << training_examples_.size() << " trained examples.";
+            confidence_ = 0.84f;
+            break;
+        case LLMIntent::Chat:
+        case LLMIntent::Compute:
+        default:
+            response << "I read this as a request about "
+                     << join_keywords(analysis.keywords.empty() ? analysis.tokens : analysis.keywords)
+                     << ". ";
+            if (!memories.empty()) {
+                const auto ranked_memories = rerank_memories_semantically(analysis, memories);
+                response << "Relevant memory: " << first_sentence(ranked_memories.front().content) << " ";
+            }
+            response << "Recommended answer: " << first_sentence(analysis.original);
+            response << (analysis.asks_question
+                ? " My best next step is to answer directly, identify assumptions, and verify the result."
+                : " The useful path is to clarify the goal, act on the smallest working step, and verify it.");
+            confidence_ = memories.empty() ? 0.70f : 0.80f;
+            break;
+    }
+    const std::string compressed = compress_prompt_context(analysis, memories);
+    Q_UNUSED(compressed);
+    return validate_and_repair_response(analysis, response.str());
+}
+
+void LLMEngine::learn_sequence_model(const std::string& text) {
+    const auto tokens = words_from(text);
+    if (tokens.empty()) {
+        return;
+    }
+    next_token_counts_["<START>"][tokens.front()]++;
+    for (size_t i = 0; i + 1 < tokens.size(); ++i) {
+        next_token_counts_[tokens[i]][tokens[i + 1]]++;
+    }
+    next_token_counts_[tokens.back()]["<END>"]++;
+}
+
 // ========================================
 // AIRLLM INTEGRATION
 // ========================================
@@ -418,6 +983,14 @@ void LLMEngine::configure_airllm(const AirLLMRuntimeConfig& cfg) {
 
 AirLLMRuntimeConfig LLMEngine::get_airllm_config() const {
     return airllm_bridge_.get_config();
+}
+
+AirLLMBridge& LLMEngine::get_airllm_bridge() {
+    return airllm_bridge_;
+}
+
+const AirLLMBridge& LLMEngine::get_airllm_bridge() const {
+    return airllm_bridge_;
 }
 
 bool LLMEngine::is_airllm_available() const {

@@ -1,0 +1,27 @@
+{
+  "source": {
+    "name": "OpenJarvis",
+    "repository": "https://github.com/open-jarvis/OpenJarvis.git",
+    "license": "Apache-2.0"
+  },
+  "brainllm_package": "tools/openjarvis_voice",
+  "included_modules": [
+    "openjarvis.speech",
+    "openjarvis.tools.audio_tool",
+    "openjarvis.tools.text_to_speech",
+    "openjarvis.core.registry",
+    "openjarvis.core.types",
+    "openjarvis.core.events"
+  ],
+  "tts_backends": [
+    "kokoro",
+    "openai_tts",
+    "cartesia"
+  ],
+  "stt_backends": [
+    "faster-whisper",
+    "openai",
+    "deepgram"
+  ],
+  "notes": "Vendored voice subset only. Full OpenJarvis agent/server code is not included."
+}

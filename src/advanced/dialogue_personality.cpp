@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <set>
 #include <sstream>
 
 namespace BrainLLM {
@@ -20,6 +22,59 @@ std::string normalize_key(const std::string& value) {
     }
 
     return normalized;
+}
+
+uint64_t dialogue_now_seconds() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+std::vector<std::string> dialogue_words(const std::string& text) {
+    std::vector<std::string> words;
+    std::string current;
+    for (unsigned char c : text) {
+        if (std::isalnum(c)) {
+            current += static_cast<char>(std::tolower(c));
+        } else if (!current.empty()) {
+            words.push_back(current);
+            current.clear();
+        }
+    }
+    if (!current.empty()) {
+        words.push_back(current);
+    }
+    return words;
+}
+
+std::string topic_from_text(const std::string& text) {
+    static const std::set<std::string> stop_words = {
+        "the", "and", "for", "you", "that", "this", "with", "what", "how", "why",
+        "are", "was", "were", "have", "has", "will", "can", "about"
+    };
+    for (const auto& word : dialogue_words(text)) {
+        if (word.size() > 3 && stop_words.find(word) == stop_words.end()) {
+            return word;
+        }
+    }
+    return "general";
+}
+
+float overlap_ratio(const std::string& a, const std::string& b) {
+    const auto left = dialogue_words(a);
+    const auto right = dialogue_words(b);
+    if (left.empty() || right.empty()) {
+        return 0.0f;
+    }
+    std::set<std::string> left_set(left.begin(), left.end());
+    std::set<std::string> right_set(right.begin(), right.end());
+    int overlap = 0;
+    for (const auto& word : left_set) {
+        if (right_set.find(word) != right_set.end()) {
+            ++overlap;
+        }
+    }
+    return static_cast<float>(overlap) /
+           static_cast<float>(std::max<size_t>(1, std::min(left_set.size(), right_set.size())));
 }
 
 std::string framework_to_string(PersonalityFramework framework) {
@@ -70,7 +125,16 @@ DialogueManager::DialogueManager(int history_depth)
 
 std::string DialogueManager::respond_to_user(const std::string& user_input) {
     maintain_conversation_state(user_input);
-    return generate_contextual_response(user_input);
+    const std::string response = generate_contextual_response(user_input);
+    ConversationTurn turn;
+    turn.timestamp = dialogue_now_seconds();
+    turn.speaker = "user";
+    turn.message = user_input;
+    turn.response = response;
+    turn.confidence = context_.conversation_coherence;
+    turn.context = context_.current_topic;
+    add_turn(turn);
+    return response;
 }
 
 void DialogueManager::add_turn(const ConversationTurn& turn) {
@@ -86,7 +150,9 @@ DialogueContext DialogueManager::get_context() const {
 }
 
 void DialogueManager::update_context(const std::string& new_topic) {
-    context_.current_topic = new_topic;
+    if (!new_topic.empty() && new_topic != "no_change") {
+        context_.current_topic = new_topic;
+    }
 }
 
 std::vector<ConversationTurn> DialogueManager::get_conversation_history() const {
@@ -100,22 +166,49 @@ void DialogueManager::clear_history() {
 }
 
 std::string DialogueManager::detect_topic_change(const std::string& input) {
-    if (input.find("about") != std::string::npos) {
-        return "topic_changed";
+    const std::string topic = topic_from_text(input);
+    if (context_.current_topic == "general") {
+        return topic;
+    }
+    if (topic != "general" && topic != context_.current_topic &&
+        overlap_ratio(topic, context_.current_topic) < 0.5f) {
+        return topic;
     }
     return "no_change";
 }
 
 float DialogueManager::measure_coherence() {
+    if (context_.history.empty()) {
+        return context_.conversation_coherence;
+    }
+    const ConversationTurn& last = context_.history.back();
+    context_.conversation_coherence =
+        std::max(0.0f, std::min(1.0f, 0.65f + overlap_ratio(last.message, last.response) * 0.35f));
     return context_.conversation_coherence;
 }
 
 std::string DialogueManager::generate_contextual_response(const std::string& input) {
-    return "Response: I understand. " + input;
+    std::ostringstream response;
+    response << "Response";
+    if (context_.turn_count > 0) {
+        response << " in context of " << context_.current_topic;
+    }
+    response << ": I understand the request as focused on " << topic_from_text(input) << ".";
+    if (!context_.history.empty()) {
+        response << " Continuing from the previous turn, I will keep the answer coherent and actionable.";
+    }
+    return response.str();
 }
 
 void DialogueManager::maintain_conversation_state(const std::string& input) {
-    // Update conversation state
+    const std::string topic_change = detect_topic_change(input);
+    update_context(topic_change == "no_change" ? context_.current_topic : topic_change);
+    for (const auto& word : dialogue_words(input)) {
+        if (!word.empty() && std::isupper(static_cast<unsigned char>(word[0]))) {
+            context_.entities_mentioned.push_back(word);
+        }
+    }
+    measure_coherence();
 }
 
 // ========================================
@@ -222,7 +315,19 @@ std::vector<BehaviorPattern> PersonalityEngine::get_behavior_patterns() const {
 }
 
 void PersonalityEngine::adapt_personality_from_feedback(const std::string& feedback) {
-    personality_.conscientiousness = clamp_trait(personality_.conscientiousness + 0.05f);
+    const std::string lower = normalize_key(feedback);
+    if (lower.find("careful") != std::string::npos || lower.find("accurate") != std::string::npos) {
+        personality_.conscientiousness = clamp_trait(personality_.conscientiousness + 0.05f);
+    }
+    if (lower.find("warm") != std::string::npos || lower.find("kind") != std::string::npos) {
+        personality_.agreeableness = clamp_trait(personality_.agreeableness + 0.05f);
+    }
+    if (lower.find("creative") != std::string::npos) {
+        personality_.openness = clamp_trait(personality_.openness + 0.05f);
+    }
+    if (lower.find("too") != std::string::npos && lower.find("much") != std::string::npos) {
+        personality_.extraversion = clamp_trait(personality_.extraversion - 0.03f);
+    }
     active_profile_.traits = personality_;
 }
 
@@ -459,15 +564,48 @@ EmotionSimulator::EmotionSimulator() : emotion_decay_rate_(0.95f) {
 
 EmotionVector EmotionSimulator::analyze_emotional_content(const std::string& text) {
     EmotionVector emotions;
+    emotions.joy = 0.0f;
+    emotions.sadness = 0.0f;
+    emotions.anger = 0.0f;
+    emotions.fear = 0.0f;
+    emotions.surprise = 0.0f;
+    emotions.disgust = 0.0f;
+    const std::string lower = normalize_key(text);
     
-    if (text.find("happy") != std::string::npos) {
+    if (lower.find("happy") != std::string::npos || lower.find("great") != std::string::npos) {
         emotions.joy = 0.8f;
     }
-    if (text.find("sad") != std::string::npos) {
+    if (lower.find("sad") != std::string::npos || lower.find("hurt") != std::string::npos) {
         emotions.sadness = 0.8f;
     }
-    
-    emotions.dominant_emotion = EmotionalState::Neutral;
+    if (lower.find("angry") != std::string::npos || lower.find("frustrated") != std::string::npos) {
+        emotions.anger = 0.8f;
+    }
+    if (lower.find("afraid") != std::string::npos || lower.find("scared") != std::string::npos) {
+        emotions.fear = 0.8f;
+    }
+    if (lower.find("wow") != std::string::npos || lower.find("surprised") != std::string::npos) {
+        emotions.surprise = 0.7f;
+    }
+
+    float max_value = emotions.joy;
+    emotions.dominant_emotion = EmotionalState::Happy;
+    const std::vector<std::pair<float, EmotionalState>> candidates = {
+        {emotions.sadness, EmotionalState::Sad},
+        {emotions.anger, EmotionalState::Angry},
+        {emotions.fear, EmotionalState::Fearful},
+        {emotions.surprise, EmotionalState::Surprised},
+        {emotions.disgust, EmotionalState::Disgusted}
+    };
+    for (const auto& candidate : candidates) {
+        if (candidate.first > max_value) {
+            max_value = candidate.first;
+            emotions.dominant_emotion = candidate.second;
+        }
+    }
+    if (max_value <= 0.0f) {
+        emotions.dominant_emotion = EmotionalState::Neutral;
+    }
     return emotions;
 }
 
@@ -486,6 +624,15 @@ void EmotionSimulator::trigger_emotion(EmotionalState emotion, float intensity) 
         case EmotionalState::Angry:
             current_emotions_.anger = intensity;
             break;
+        case EmotionalState::Fearful:
+            current_emotions_.fear = intensity;
+            break;
+        case EmotionalState::Surprised:
+            current_emotions_.surprise = intensity;
+            break;
+        case EmotionalState::Disgusted:
+            current_emotions_.disgust = intensity;
+            break;
         default:
             break;
     }
@@ -500,6 +647,14 @@ std::string EmotionSimulator::express_emotion(EmotionalState emotion) {
             return "I feel down...";
         case EmotionalState::Angry:
             return "I'm frustrated!";
+        case EmotionalState::Fearful:
+            return "I feel cautious.";
+        case EmotionalState::Surprised:
+            return "That surprised me.";
+        case EmotionalState::Disgusted:
+            return "I feel aversion toward that.";
+        case EmotionalState::Confused:
+            return "I feel uncertain and need more clarity.";
         default:
             return "I feel neutral.";
     }
@@ -509,6 +664,9 @@ void EmotionSimulator::update_emotional_state() {
     current_emotions_.joy *= emotion_decay_rate_;
     current_emotions_.sadness *= emotion_decay_rate_;
     current_emotions_.anger *= emotion_decay_rate_;
+    current_emotions_.fear *= emotion_decay_rate_;
+    current_emotions_.surprise *= emotion_decay_rate_;
+    current_emotions_.disgust *= emotion_decay_rate_;
 }
 
 float EmotionSimulator::get_emotion_intensity(EmotionalState emotion) const {
@@ -519,6 +677,12 @@ float EmotionSimulator::get_emotion_intensity(EmotionalState emotion) const {
             return current_emotions_.sadness;
         case EmotionalState::Angry:
             return current_emotions_.anger;
+        case EmotionalState::Fearful:
+            return current_emotions_.fear;
+        case EmotionalState::Surprised:
+            return current_emotions_.surprise;
+        case EmotionalState::Disgusted:
+            return current_emotions_.disgust;
         default:
             return 0.0f;
     }

@@ -1,8 +1,32 @@
 #include "memory_system.h"
 #include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <map>
+#include <set>
 
 namespace BrainLLM {
+
+namespace {
+
+std::vector<std::string> memory_tokens(const std::string& text) {
+    std::vector<std::string> tokens;
+    std::string current;
+    for (unsigned char c : text) {
+        if (std::isalnum(c)) {
+            current += static_cast<char>(std::tolower(c));
+        } else if (!current.empty()) {
+            tokens.push_back(current);
+            current.clear();
+        }
+    }
+    if (!current.empty()) {
+        tokens.push_back(current);
+    }
+    return tokens;
+}
+
+} // namespace
 
 MemorySystem::MemorySystem(int max_size)
     : max_size_(max_size) {}
@@ -32,7 +56,10 @@ std::vector<MemoryRecord> MemorySystem::retrieve_memories(const std::string& que
     std::vector<std::pair<float, MemoryRecord>> scored;
     for (auto& entry : memory_storage_) {
         float relevance = calculate_relevance(entry.record.content, query);
-        scored.emplace_back(relevance, entry.record);
+        relevance = relevance * 0.78f + entry.record.importance * 0.22f;
+        if (relevance > 0.0f || query.empty()) {
+            scored.emplace_back(relevance, entry.record);
+        }
     }
     
     std::sort(scored.begin(), scored.end(), 
@@ -104,23 +131,41 @@ std::vector<MemoryRecord> MemorySystem::get_memories_by_category(const std::stri
 }
 
 float MemorySystem::calculate_relevance(const std::string& memory, const std::string& query) const {
-    if (query.empty()) return 0.0f;
-    
-    // Simple substring matching for relevance
-    size_t pos = memory.find(query);
-    if (pos != std::string::npos) {
-        return 0.9f;
+    if (query.empty()) return 0.1f;
+
+    std::string lower_memory = memory;
+    std::string lower_query = query;
+    std::transform(lower_memory.begin(), lower_memory.end(), lower_memory.begin(), ::tolower);
+    std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
+
+    if (lower_memory.find(lower_query) != std::string::npos) {
+        return 1.0f;
     }
-    
-    // Partial matching
-    float match_score = 0.0f;
-    for (char c : query) {
-        if (memory.find(c) != std::string::npos) {
-            match_score += 0.1f;
+
+    const auto memory_words = memory_tokens(memory);
+    const auto query_words = memory_tokens(query);
+    if (memory_words.empty() || query_words.empty()) {
+        return 0.0f;
+    }
+
+    std::set<std::string> memory_set(memory_words.begin(), memory_words.end());
+    std::map<std::string, int> memory_frequency;
+    for (const auto& word : memory_words) {
+        memory_frequency[word]++;
+    }
+
+    float overlap = 0.0f;
+    float weighted = 0.0f;
+    for (const auto& word : query_words) {
+        if (memory_set.find(word) != memory_set.end()) {
+            overlap += 1.0f;
+            weighted += 1.0f + std::min(2, memory_frequency[word]) * 0.2f;
         }
     }
-    
-    return std::min(0.8f, match_score);
+
+    const float coverage = overlap / static_cast<float>(std::max<size_t>(1, query_words.size()));
+    const float density = weighted / static_cast<float>(std::max<size_t>(1, memory_words.size()));
+    return std::min(1.0f, coverage * 0.75f + density * 0.25f);
 }
 
 void MemorySystem::remove_oldest() {

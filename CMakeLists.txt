@@ -156,3 +156,24 @@ target_link_libraries(BrainLLM_API
     Qt6::Network
 )
 target_include_directories(BrainLLM_API PUBLIC include)
+
+add_custom_command(TARGET BrainLLM_API POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/web/client
+        $<TARGET_FILE_DIR:BrainLLM_API>/client
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/assets
+        $<TARGET_FILE_DIR:BrainLLM_API>/assets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/data
+        $<TARGET_FILE_DIR:BrainLLM_API>/data
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/scripts
+        $<TARGET_FILE_DIR:BrainLLM_API>/scripts
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/tools
+        $<TARGET_FILE_DIR:BrainLLM_API>/tools
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/config.ini
+        $<TARGET_FILE_DIR:BrainLLM_API>/config.ini
+)

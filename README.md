@@ -20,10 +20,17 @@ A comprehensive C++ application simulating an LLM-based human brain with a sophi
 ### REST API
 - `POST /api/process` - Process input text
 - `POST /api/generate` - Generate responses
+- `POST /api/chat` - Chat endpoint used by the browser client
 - `GET /api/status` - Get metrics and status
+- `GET /api/health` - Health/status alias
 - `GET /api/memory` - Query memory
 - `GET /api/config` - Get configuration
+- `GET /api/endpoints` - List available endpoints
+- `GET /api/algorithms` - List active local LLM algorithms
 - `POST /api/train` - Train the model
+- `POST /api/reset` - Reset state, context, and memory
+- `GET/POST /api/airllm/config` - Read or update AirLLM runtime settings
+- `GET /client` - Browser-based frontend client
 
 ### Settings & Configuration
 - Brain parameters (layers, neurons, learning rate)
@@ -49,6 +56,8 @@ cmake ..
 cmake --build . --config Release
 ```
 
+The Windows and Linux/macOS build scripts also package runnable files into `output/build`.
+
 ### Running
 
 **GUI Application:**
@@ -59,6 +68,11 @@ cmake --build . --config Release
 **API Server:**
 ```bash
 .\Release\BrainLLM_API.exe
+```
+
+**Browser Client:**
+```text
+http://localhost:8080/client
 ```
 
 ## Project Structure
@@ -94,12 +108,14 @@ BrainLLM/
 |   |-- main_gui.cpp                   # GUI entry point
 |   `-- main_api.cpp                   # API server entry point
 |-- gui/                               # GUI widget implementations
+|-- web/client/                        # Browser UI served by the API executable
 |-- scripts/lua/                       # Lua scripts and subscripts
 |-- data/schema/                       # SQL database layout
 |-- data/spreadsheets/                 # Excel-compatible CSV layouts
 |-- assets/audio/woman/                # Woman voice profile and WAV assets
 |-- third_party/airllm/                # Optional AIRLLM source clone
 |-- tools/airllm_runner.py             # Optional AIRLLM runner
+|-- tools/openjarvis_voice/            # Vendored OpenJarvis speech/TTS subset
 |-- CMakeLists.txt                     # Build configuration
 |-- package.json                       # Project metadata
 `-- README.md                          # This file
@@ -129,8 +145,18 @@ curl -X POST http://localhost:8080/api/generate -d "What is artificial intellige
 # Get status
 curl http://localhost:8080/api/status
 
+# Chat through the client endpoint
+curl -X POST http://localhost:8080/api/chat ^
+  -H "Content-Type: application/json" ^
+  -d "{\"messages\":[{\"role\":\"user\",\"content\":\"summarize BrainLLM\"}],\"max_tokens\":160}"
+
 # Get memory
 curl http://localhost:8080/api/memory?query=learning
+
+# Configure AirLLM at runtime
+curl -X POST http://localhost:8080/api/airllm/config ^
+  -H "Content-Type: application/json" ^
+  -d "{\"model_id\":\"your-model-id\",\"python_executable\":\"python\",\"max_new_tokens\":128,\"use_cuda\":true}"
 
 # Train model
 curl -X POST http://localhost:8080/api/train -d "training data"
@@ -228,16 +254,16 @@ The application monitors:
 - Model Accuracy
 - Confidence Level
 
-## Future Enhancements
+## Current Systems
 
-- [ ] GPU acceleration with CUDA
-- [ ] Advanced model saving/loading
-- [ ] Real-time training interface
-- [ ] Multi-language support
-- [ ] Distributed processing
-- [ ] Advanced visualization options
-- [ ] Plugin system
-- [x] Database integration
+- Local heuristic LLM generation with memory recall
+- Wolfram Alpha routing for computational prompts when configured
+- Optional AirLLM subprocess bridge with runtime configuration
+- Optional OpenJarvis voice subset under `tools/openjarvis_voice`
+- Qt GUI and REST API server
+- Browser client served from the API server
+- English, grammar, multilingual, cognitive, safety, script, voice, and quantum modules
+- SQL/schema and spreadsheet layout assets
 
 ## License
 

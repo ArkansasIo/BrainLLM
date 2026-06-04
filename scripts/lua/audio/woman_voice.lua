@@ -1,4 +1,24 @@
-local audio = require("scripts.lua.subscripts.audio_helpers")
+local function load_audio_helpers()
+    local ok, module = pcall(require, "scripts.lua.subscripts.audio_helpers")
+    if ok then
+        return module
+    end
+
+    local source = debug and debug.getinfo and debug.getinfo(1, "S").source or ""
+    local script_path = source:sub(1, 1) == "@" and source:sub(2) or source
+    local script_dir = script_path:match("^(.*[\\/])") or ""
+    if script_dir ~= "" then
+        local chunk, load_error = loadfile(script_dir .. "../subscripts/audio_helpers.lua")
+        if chunk then
+            return chunk()
+        end
+        error(load_error or module)
+    end
+
+    error(module)
+end
+
+local audio = load_audio_helpers()
 
 local woman_voice = {}
 

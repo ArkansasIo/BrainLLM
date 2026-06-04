@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QByteArray>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <memory>
@@ -39,7 +40,12 @@ private:
     };
     
     HttpRequest parse_http_request(const QString& raw_request);
-    QString build_http_response(const QString& body, int status_code = 200);
+    QByteArray build_http_response(const QByteArray& body, int status_code = 200,
+                                   const QString& content_type = "application/json");
+    QByteArray build_http_response(const QString& body, int status_code = 200,
+                                   const QString& content_type = "application/json");
+    bool is_static_asset_request(const HttpRequest& request) const;
+    QByteArray serve_static_asset(const QString& path);
 };
 
 } // namespace BrainLLM
