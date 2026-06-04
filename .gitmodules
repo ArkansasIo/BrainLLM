@@ -1,0 +1,3 @@
+[submodule "third_party/airllm"]
+	path = third_party/airllm
+	url = https://github.com/lyogavin/airllm.git

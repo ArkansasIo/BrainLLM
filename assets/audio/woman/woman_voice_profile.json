@@ -1,0 +1,22 @@
+{
+  "profile_id": "woman_default",
+  "display_name": "BrainLLM Woman Voice",
+  "gender": "woman",
+  "language": "en-US",
+  "pitch_hz": 220.0,
+  "speaking_rate": 1.0,
+  "warmth": 0.75,
+  "assets": [
+    {
+      "asset_id": "woman_startup",
+      "file_path": "assets/audio/woman/startup_tone.wav",
+      "description": "Generated startup tone placeholder"
+    },
+    {
+      "asset_id": "woman_notify",
+      "file_path": "assets/audio/woman/notify_tone.wav",
+      "description": "Generated notification tone placeholder"
+    }
+  ],
+  "note": "These are placeholder WAV tones. Real speech synthesis requires a TTS backend."
+}

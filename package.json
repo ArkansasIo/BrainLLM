@@ -1,0 +1,8 @@
+{
+  "name": "BrainLLM",
+  "version": "1.0.0",
+  "description": "LLM-based AI Brain Simulator with GUI and REST API inspired by Chappie",
+  "keywords": ["AI", "LLM", "Neural Network", "GUI", "API", "Brain Simulation"],
+  "author": "AI Developer",
+  "license": "MIT"
+}
