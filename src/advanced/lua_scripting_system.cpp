@@ -18,9 +18,109 @@ LuaScriptingSystem::LuaScriptingSystem() {
 
     register_script({
         "voice_woman_startup",
-        "Woman Voice Startup",
+        "Woman Voice Speak",
         "scripts/lua/audio/woman_voice.lua",
         "main",
+        ScriptScope::Audio,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_synthesize",
+        "Woman Voice Synthesize WAV",
+        "scripts/lua/audio/woman_voice.lua",
+        "synthesize",
+        ScriptScope::Audio,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_recognize",
+        "Woman Voice Recognize Microphone",
+        "scripts/lua/audio/woman_voice.lua",
+        "recognize",
+        ScriptScope::Audio,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_startup_tone",
+        "Woman Voice Startup Tone",
+        "scripts/lua/audio/woman_voice.lua",
+        "startup_tone",
+        ScriptScope::Audio,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_notify_tone",
+        "Woman Voice Notify Tone",
+        "scripts/lua/audio/woman_voice.lua",
+        "notify_tone",
+        ScriptScope::Audio,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_listen",
+        "Woman Voice Listen",
+        "scripts/lua/audio/woman_voice.lua",
+        "listen",
+        ScriptScope::Audio,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_reply",
+        "Woman Voice Dialogue Reply",
+        "scripts/lua/audio/woman_voice.lua",
+        "reply",
+        ScriptScope::Dialogue,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_startup_sequence",
+        "Woman Voice Startup Sequence",
+        "scripts/lua/audio/woman_voice.lua",
+        "startup_sequence",
+        ScriptScope::Audio,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_notification",
+        "Woman Voice Notification",
+        "scripts/lua/audio/woman_voice.lua",
+        "notification",
+        ScriptScope::Audio,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_error",
+        "Woman Voice Error Message",
+        "scripts/lua/audio/woman_voice.lua",
+        "error_message",
+        ScriptScope::Audio,
+        {"scripts/lua/subscripts/audio_helpers.lua"},
+        true
+    });
+
+    register_script({
+        "voice_woman_status",
+        "Woman Voice Status Message",
+        "scripts/lua/audio/woman_voice.lua",
+        "status",
         ScriptScope::Audio,
         {"scripts/lua/subscripts/audio_helpers.lua"},
         true
@@ -71,12 +171,54 @@ ScriptExecutionResult LuaScriptingSystem::execute_script(
         return result;
     }
 
-    std::ostringstream output;
-    output << "Lua script planned: " << it->second.script_path
-           << "::" << it->second.entry_point;
-    for (const auto& arg : args) {
-        output << " " << arg.first << "=" << arg.second;
+    const auto arg_or = [&args](const std::string& key, const std::string& fallback) {
+        auto arg = args.find(key);
+        return arg == args.end() || arg->second.empty() ? fallback : arg->second;
+    };
+
+    std::string action = "script_plan";
+    std::string endpoint;
+    if (it->second.entry_point == "main" || it->second.entry_point == "speak" ||
+        it->second.entry_point == "reply" || it->second.entry_point == "notification" ||
+        it->second.entry_point == "error_message" || it->second.entry_point == "status") {
+        action = "speak";
+        endpoint = "/api/speech/speak";
+    } else if (it->second.entry_point == "synthesize") {
+        action = "synthesize";
+        endpoint = "/api/speech/synthesize";
+    } else if (it->second.entry_point == "recognize" || it->second.entry_point == "listen") {
+        action = "recognize";
+        endpoint = "/api/speech/recognize";
+    } else if (it->second.entry_point == "startup_sequence") {
+        action = "sequence";
+        endpoint = "/api/speech/speak";
+    } else if (it->second.entry_point == "startup_tone" || it->second.entry_point == "notify_tone") {
+        action = "tone";
     }
+
+    std::ostringstream output;
+    output << "{"
+           << "\"script_id\":\"" << it->second.script_id << "\","
+           << "\"path\":\"" << it->second.script_path << "\","
+           << "\"entry_point\":\"" << it->second.entry_point << "\","
+           << "\"action\":\"" << action << "\"";
+    if (!endpoint.empty()) {
+        output << ",\"api\":\"" << endpoint << "\"";
+    }
+    output << ",\"profile\":\"woman_default\"";
+    output << ",\"text\":\"" << arg_or("text", arg_or("assistant_text", "BrainLLM is ready.")) << "\"";
+    output << ",\"output_path\":\"" << arg_or("output_path", "assets/audio/woman/generated_response.wav") << "\"";
+    output << ",\"timeout_seconds\":\"" << arg_or("timeout_seconds", "6") << "\"";
+    output << ",\"args\":{";
+    bool first_arg = true;
+    for (const auto& arg : args) {
+        if (!first_arg) {
+            output << ",";
+        }
+        output << "\"" << arg.first << "\":\"" << arg.second << "\"";
+        first_arg = false;
+    }
+    output << "}}";
 
     result.success = true;
     result.output = output.str();

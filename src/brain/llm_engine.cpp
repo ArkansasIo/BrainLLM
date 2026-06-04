@@ -1,4 +1,9 @@
 #include "llm_engine.h"
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
 #include <algorithm>
 #include <cctype>
 #include <map>
@@ -91,6 +96,35 @@ std::string state_name(BrainState state) {
     return "unknown";
 }
 
+bool looks_computational_query(const std::string& prompt, const std::set<std::string>& words) {
+    if (prompt.find("wolfram:") == 0 || prompt.find("Wolfram:") == 0) {
+        return true;
+    }
+
+    if (prompt.find_first_of("=+-*/^") != std::string::npos) {
+        return true;
+    }
+
+    return contains_any(words, {
+        "calculate", "compute", "solve", "integrate", "derive", "derivative", "equation",
+        "convert", "distance", "population", "weather", "statistics", "plot", "factor",
+        "simplify", "unit", "units", "constant", "chemistry", "physics", "astronomy"
+    });
+}
+
+std::string strip_tool_prefix(const std::string& prompt) {
+    const std::string lower = to_lower(prompt);
+    const std::string prefix = "wolfram:";
+    if (lower.find(prefix) == 0) {
+        size_t start = prefix.size();
+        while (start < prompt.size() && std::isspace(static_cast<unsigned char>(prompt[start]))) {
+            ++start;
+        }
+        return prompt.substr(start);
+    }
+    return prompt;
+}
+
 } // namespace
 
 LLMEngine::LLMEngine(const BrainConfig& config)
@@ -98,6 +132,8 @@ LLMEngine::LLMEngine(const BrainConfig& config)
     neural_net_ = std::make_unique<NeuralNetwork>(config);
     memory_ = std::make_unique<MemorySystem>(config.max_memory_size);
     attention_ = std::make_unique<AttentionMechanism>(config.num_attention_heads, config.embedding_dim);
+    wolfram_alpha_ = std::make_unique<WolframAlphaClient>();
+    // AirLLM bridge is default-constructed; call configure_airllm() to activate it.
 }
 
 std::string LLMEngine::process_input(const std::string& input) {
@@ -153,6 +189,7 @@ std::string LLMEngine::generate_response(const std::string& prompt, int max_toke
     state_ = BrainState::Processing;
 
     auto words = words_from(prompt);
+    std::set<std::string> word_set(words.begin(), words.end());
     auto memories = memory_->retrieve_memories(prompt, 3);
 
     std::ostringstream response;
@@ -161,7 +198,30 @@ std::string LLMEngine::generate_response(const std::string& prompt, int max_toke
     if (prompt.empty()) {
         response << "provide a prompt and I will generate a response.";
         confidence_ = 0.25f;
+    } else if (looks_computational_query(prompt, word_set)) {
+        // --- Wolfram Alpha: mathematics, science, unit conversion, factual queries ---
+        const std::string query = strip_tool_prefix(prompt);
+        const std::string wolfram_answer = query_wolfram_alpha(query, true);
+        response << wolfram_answer;
+        confidence_ = wolfram_answer.find("not configured") == std::string::npos ? 0.86f : 0.55f;
+    } else if (airllm_bridge_.is_source_available() && !airllm_bridge_.get_config().model_id.empty()) {
+        // --- AirLLM: use the configured language model for natural-language generation ---
+        const std::string airllm_result = run_airllm_inference(prompt);
+        if (airllm_result.find("AirLLM error:") != 0) {
+            response.str("");  // clear "BrainLLM response: " prefix
+            response << airllm_result;
+            confidence_ = 0.88f;
+        } else {
+            // AirLLM failed; fall through to heuristic response
+            response << "I understand the prompt as focused on " << join_keywords(words) << ". ";
+            if (!memories.empty()) {
+                response << "Relevant memory: " << first_sentence(memories[0].content) << " ";
+            }
+            response << "[AirLLM unavailable: " << airllm_result << "]";
+            confidence_ = 0.55f;
+        }
     } else {
+        // --- Heuristic fallback when neither Wolfram nor AirLLM is active ---
         response << "I understand the prompt as focused on " << join_keywords(words) << ". ";
         if (!memories.empty()) {
             response << "Relevant memory: " << first_sentence(memories[0].content) << " ";
@@ -185,6 +245,33 @@ std::string LLMEngine::generate_response(const std::string& prompt, int max_toke
 
     state_ = BrainState::Idle;
     return output;
+}
+
+std::string LLMEngine::query_wolfram_alpha(const std::string& query, bool llm_format) {
+    if (!wolfram_alpha_) {
+        wolfram_alpha_ = std::make_unique<WolframAlphaClient>();
+    }
+
+    const QString q = QString::fromStdString(query).trimmed();
+    const WolframAlphaResult result = llm_format
+        ? wolfram_alpha_->llm_answer(q)
+        : wolfram_alpha_->short_answer(q);
+
+    std::ostringstream oss;
+    if (result.success) {
+        oss << "Wolfram Alpha result: " << result.answer.toStdString();
+        if (!result.source_url.isEmpty()) {
+            oss << " Source: " << result.source_url.toStdString();
+        }
+    } else {
+        oss << "Wolfram Alpha is available as an external computation tool, but " 
+            << result.error.toStdString();
+        if (!result.source_url.isEmpty()) {
+            oss << " Manual query: " << result.source_url.toStdString();
+        }
+    }
+
+    return oss.str();
 }
 
 void LLMEngine::train(const std::vector<std::string>& training_data) {
@@ -319,6 +406,89 @@ std::string LLMEngine::decode_output(const Activation& output) {
     std::ostringstream oss;
     oss << "Neural activation average: " << average;
     return oss.str();
+}
+
+// ========================================
+// AIRLLM INTEGRATION
+// ========================================
+
+void LLMEngine::configure_airllm(const AirLLMRuntimeConfig& cfg) {
+    airllm_bridge_.configure(cfg);
+}
+
+AirLLMRuntimeConfig LLMEngine::get_airllm_config() const {
+    return airllm_bridge_.get_config();
+}
+
+bool LLMEngine::is_airllm_available() const {
+    return airllm_bridge_.is_source_available() &&
+           !airllm_bridge_.get_config().model_id.empty();
+}
+
+std::string LLMEngine::run_airllm_inference(const std::string& prompt) {
+    if (!airllm_bridge_.is_source_available()) {
+        return "AirLLM error: source files not found at " +
+               airllm_bridge_.get_config().airllm_root;
+    }
+    if (airllm_bridge_.get_config().model_id.empty()) {
+        return "AirLLM error: no model_id configured";
+    }
+
+    // Write the output to a temp file in the build directory
+    const std::string output_path = "build/airllm_output.json";
+
+    // Ensure build/ directory exists
+    QDir().mkpath(QString::fromStdString("build"));
+
+    const std::string command_str =
+        airllm_bridge_.build_inference_command(prompt, output_path);
+
+    // QProcess only accepts program + args separately; split on first space
+    // after the quoted exe. For simplicity we run via shell.
+    QProcess process;
+    process.setProcessChannelMode(QProcess::MergedChannels);
+
+#ifdef Q_OS_WIN
+    process.start("cmd.exe", QStringList() << "/c" << QString::fromStdString(command_str));
+#else
+    process.start("/bin/sh", QStringList() << "-c" << QString::fromStdString(command_str));
+#endif
+
+    const int timeout_ms = (airllm_bridge_.get_config().max_new_tokens + 1) * 1500;
+    if (!process.waitForFinished(timeout_ms)) {
+        process.kill();
+        return "AirLLM error: inference timed out after " +
+               std::to_string(timeout_ms / 1000) + "s";
+    }
+
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        const std::string stderr_text =
+            process.readAllStandardOutput().toStdString();
+        return "AirLLM error: runner exited with code " +
+               std::to_string(process.exitCode()) + ". " + stderr_text;
+    }
+
+    // Parse output JSON: {"generated_text": "..."}
+    QFile result_file(QString::fromStdString(output_path));
+    if (!result_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return "AirLLM error: could not open output file " + output_path;
+    }
+    const QByteArray raw = result_file.readAll();
+    result_file.close();
+
+    QJsonParseError json_error;
+    const QJsonDocument doc = QJsonDocument::fromJson(raw, &json_error);
+    if (json_error.error != QJsonParseError::NoError || !doc.isObject()) {
+        return "AirLLM error: could not parse output JSON: " +
+               json_error.errorString().toStdString();
+    }
+
+    const QString generated = doc.object().value("generated_text").toString().trimmed();
+    if (generated.isEmpty()) {
+        return "AirLLM error: output JSON has no generated_text field";
+    }
+
+    return generated.toStdString();
 }
 
 } // namespace BrainLLM

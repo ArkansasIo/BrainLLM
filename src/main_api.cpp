@@ -41,6 +41,13 @@ int main(int argc, char* argv[]) {
     std::cout << "  GET    /api/memory     - Query memory" << std::endl;
     std::cout << "  GET    /api/config     - Get current configuration" << std::endl;
     std::cout << "  POST   /api/train      - Train the model" << std::endl;
+    std::cout << "  POST   /api/wolfram    - Query Wolfram Alpha external knowledge" << std::endl;
+    std::cout << "  GET    /api/speech/status - Get speech backend status" << std::endl;
+    std::cout << "  POST   /api/speech/speak - Speak text through OS text-to-speech" << std::endl;
+    std::cout << "  POST   /api/speech/synthesize - Synthesize text to WAV" << std::endl;
+    std::cout << "  POST   /api/speech/recognize - Recognize speech from microphone" << std::endl;
+    std::cout << "  GET    /api/scripts    - List registered Lua script plans" << std::endl;
+    std::cout << "  POST   /api/scripts/execute - Execute a registered Lua script plan" << std::endl;
     std::cout << "  GET    /v1/models      - OpenAI-style model list" << std::endl;
     std::cout << "  POST   /v1/completions - OpenAI-style text completion" << std::endl;
     std::cout << "  POST   /v1/chat/completions - OpenAI-style chat completion" << std::endl;

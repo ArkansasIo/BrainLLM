@@ -58,6 +58,74 @@ cmake --build . --config Release
 
 The API server will start on `http://localhost:8080`
 
+### Wolfram Alpha External Knowledge
+
+BrainLLM can use Wolfram Alpha as an external computation and factual-knowledge tool.
+
+Set one of these environment variables before launching the GUI or API server:
+
+```bash
+WOLFRAM_APP_ID=your_wolfram_appid
+# or
+WOLFRAM_ALPHA_APPID=your_wolfram_appid
+```
+
+Usage:
+
+```bash
+curl -X POST http://localhost:8080/api/wolfram \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"integrate x^2 from 0 to 3\",\"mode\":\"llm\"}"
+```
+
+Chat prompts also route computation-style requests through Wolfram Alpha automatically. You can force the tool with:
+
+```text
+wolfram: solve x^2 - 5x + 6 = 0
+```
+
+### Speech API
+
+BrainLLM includes a Windows `System.Speech` backend for text-to-speech, WAV synthesis, and microphone dictation recognition.
+
+```bash
+curl http://localhost:8080/api/speech/status
+
+curl -X POST http://localhost:8080/api/speech/speak \
+  -H "Content-Type: application/json" \
+  -d "{\"text\":\"BrainLLM speech synthesis is online.\"}"
+
+curl -X POST http://localhost:8080/api/speech/synthesize \
+  -H "Content-Type: application/json" \
+  -d "{\"text\":\"Saved speech output.\",\"output_path\":\"assets/audio/generated/speech.wav\"}"
+
+curl -X POST http://localhost:8080/api/speech/recognize \
+  -H "Content-Type: application/json" \
+  -d "{\"timeout_seconds\":6}"
+```
+
+Speech recognition requires a configured default microphone and Windows microphone permissions.
+
+The woman voice Lua script exposes matching speech actions:
+
+```lua
+local woman_voice = require("scripts.lua.audio.woman_voice")
+
+woman_voice.speak("BrainLLM is online.")
+woman_voice.synthesize("Saved output.", "assets/audio/woman/generated_response.wav")
+woman_voice.recognize(6)
+```
+
+Script-plan endpoints:
+
+```bash
+curl http://localhost:8080/api/scripts
+
+curl -X POST http://localhost:8080/api/scripts/execute \
+  -H "Content-Type: application/json" \
+  -d "{\"script_id\":\"voice_woman_synthesize\",\"args\":{\"text\":\"Hello\"}}"
+```
+
 ---
 
 ## 📦 Architecture

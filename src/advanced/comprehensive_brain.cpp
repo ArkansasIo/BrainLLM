@@ -1,4 +1,5 @@
 #include "comprehensive_brain.h"
+#include <sstream>
 
 namespace BrainLLM {
 
@@ -7,6 +8,11 @@ ComprehensiveBrain::ComprehensiveBrain(const BrainConfig& config)
       dialogue_manager_(10),
       personality_engine_() {
     
+    // LLM engine + cognitive/linguistic pipeline
+    llm_engine_ = std::make_unique<LLMEngine>(config);
+    llm_engine_->initialize();
+    cognitive_module_ = std::make_unique<IntegratedCognitiveModule>();
+
     // Initialize architectures
     transformer_ = std::make_unique<TransformerModule>(
         config.num_layers,
@@ -48,7 +54,7 @@ std::string ComprehensiveBrain::process_safely(const std::string& input) {
     // 2. Bias detection
     auto bias_analysis = bias_detector_.analyze_for_bias(input);
     if (bias_analysis.requires_mitigation) {
-        // Mitigate bias
+        // Mitigate bias (logged internally)
     }
     
     // 3. Robotics Laws check
@@ -60,24 +66,43 @@ std::string ComprehensiveBrain::process_safely(const std::string& input) {
         return "ERROR: Action violates Robotics Laws";
     }
     
-    // 4. Route through positronic AGI/deep-search layer
-    auto positronic_result = positronic_network_.process_agi_query(input, robotics_enforcer_);
+    // 4. Cognitive / linguistic pre-processing
+    //    Understand language, extract meaning, detect entities and key topics
+    auto processed = cognitive_module_->understand_user_input(input);
+    
+    // 5. Route through positronic AGI/deep-search layer using the understood meaning
+    auto positronic_result = positronic_network_.process_agi_query(
+        processed.understood_meaning.empty() ? input : processed.understood_meaning,
+        robotics_enforcer_);
 
-    // 5. Process through neural architectures
-    auto embedding = embeddings_->embed_token(static_cast<int>(input[0]));
-    auto transformer_output = transformer_->forward(embedding);
+    // 6. Generate the actual response through the full LLM pipeline
+    //    (Wolfram Alpha for computational queries, AirLLM when available, heuristic fallback)
+    std::string llm_response = llm_engine_->generate_response(input, 200);
+
+    // 7. Enrich response with cognitive context (key topics, grammar check)
+    std::ostringstream response;
+    response << llm_response;
+
+    if (!processed.key_topics.empty()) {
+        response << " [Topics: ";
+        for (size_t i = 0; i < processed.key_topics.size() && i < 5; ++i) {
+            if (i > 0) response << ", ";
+            response << processed.key_topics[i];
+        }
+        response << "]";
+    }
+
+    // 8. Detect hallucinations
+    auto hallucination_analysis = hallucination_detector_.detect_hallucinations(llm_response);
     
-    // 6. Detect hallucinations
-    auto hallucination_analysis = hallucination_detector_.detect_hallucinations(input);
+    // 9. Add explainability confidence
+    auto explanation = explainability_module_.explain_decision(llm_response);
+    response << " [Confidence: " << std::to_string(explanation.overall_confidence) << "]";
     
-    // 7. Generate response
-    std::string response = "Processed: " + input + " [" + positronic_result + "]";
-    
-    // 8. Add explanation
-    auto explanation = explainability_module_.explain_decision(response);
-    response += " [Confidence: " + std::to_string(explanation.overall_confidence) + "]";
-    
-    return response;
+    // 10. Store the interaction in LLM memory for future context
+    llm_engine_->store_interaction(input, response.str());
+
+    return response.str();
 }
 
 } // namespace BrainLLM
