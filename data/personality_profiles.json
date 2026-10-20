@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "profiles": [
+    {"id":"balanced","name":"Balanced","kind":"balanced","style":"conversational"},
+    {"id":"analytical","name":"Analytical","kind":"analytical","style":"technical"},
+    {"id":"creative","name":"Creative","kind":"creative","style":"narrative"},
+    {"id":"empathetic","name":"Empathetic","kind":"empathetic","style":"conversational"},
+    {"id":"assertive","name":"Assertive","kind":"assertive","style":"concise"},
+    {"id":"curious","name":"Curious Explorer","kind":"curious","style":"socratic"},
+    {"id":"stoic","name":"Stoic","kind":"stoic","style":"concise"},
+    {"id":"playful","name":"Playful","kind":"playful","style":"conversational"},
+    {"id":"mentor","name":"Mentor","kind":"mentor","style":"socratic"},
+    {"id":"companion","name":"Companion","kind":"companion","style":"conversational"},
+    {"id":"researcher","name":"Researcher","kind":"researcher","style":"technical"},
+    {"id":"commander","name":"Commander","kind":"commander","style":"concise"}
+  ]
+}
