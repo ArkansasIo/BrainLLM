@@ -1,34 +1,46 @@
 name: BrainLLM GitHub Pages
+
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
   pull_request:
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
+
 permissions:
   contents: read
+
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   validate:
     name: Validate static site
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-        name: Check out repository
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Validate required files
         run: |
           test -s site/index.html
           test -s site/styles.css
           test -s site/app.js
+
       - name: Check relative asset paths
         run: |
           grep -q 'href="./styles.css"' site/index.html
           grep -q 'src="./app.js"' site/index.html
+
       - name: Check JavaScript syntax
         run: node --check site/app.js
+
       - name: Check internal pages and API wiring
         run: |
           node - <<'NODE'
@@ -42,10 +54,11 @@ jobs:
           for (const asset of ['styles.css','app.js']) {
             if (!html.includes('./' + asset)) throw new Error('Missing relative reference: ' + asset);
           }
-          if (!js.includes("fetch(origin+path")) throw new Error('API fetch is missing');
+          if (!js.includes('fetch(origin+path')) throw new Error('API fetch is missing');
           if (!css.includes('@media(max-width:560px)')) throw new Error('Responsive breakpoint missing');
           console.log('Static-site checks passed.');
           NODE
+
   deploy:
     name: Deploy GitHub Pages
     if: github.event_name != 'pull_request'
@@ -59,12 +72,14 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-        name: Check out repository
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
