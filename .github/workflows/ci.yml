@@ -1,0 +1,44 @@
+name: BrainLLM CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brainllm-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-build-and-test:
+    name: Linux / Qt 6 / CMake
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build qt6-base-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Run smoke tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload build log context
+        if: failure()
+        run: |
+          echo "Build failed. Inspect the Configure, Build, or Run smoke tests step above."
