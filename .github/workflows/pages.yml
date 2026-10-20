@@ -61,8 +61,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         name: Check out repository
-      - name: Configure Pages metadata
-        uses: actions/configure-pages@v5
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
