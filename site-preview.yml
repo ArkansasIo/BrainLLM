@@ -1,0 +1,33 @@
+name: BrainLLM Static Site Preview
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "site-preview.yml"]
+  pull_request:
+    paths: ["site/**", "site-preview.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate site
+        run: |
+          test -s site/index.html
+          test -s site/styles.css
+          test -s site/app.js
+          node --check site/app.js
+          grep -q 'href="./styles.css"' site/index.html
+          grep -q 'src="./app.js"' site/index.html
+      - name: Upload static site preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: brainllm-static-site
+          path: site/
+          if-no-files-found: error
+          retention-days: 14
