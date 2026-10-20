@@ -175,12 +175,17 @@ add_custom_command(TARGET BrainLLM_API POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/tools
         $<TARGET_FILE_DIR:BrainLLM_API>/tools
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/third_party/openjarvis
-        $<TARGET_FILE_DIR:BrainLLM_API>/third_party/openjarvis
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/third_party/llm_sources
-        $<TARGET_FILE_DIR:BrainLLM_API>/third_party/llm_sources
+    # Optional source bundles are not required for the core API executable.
+    # Copy them only when present so a checkout without these optional folders
+    # still builds successfully.
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/third_party/openjarvis
+        -DDEST_DIR=$<TARGET_FILE_DIR:BrainLLM_API>/third_party/openjarvis
+        -P ${CMAKE_SOURCE_DIR}/cmake/CopyOptionalDirectory.cmake
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/third_party/llm_sources
+        -DDEST_DIR=$<TARGET_FILE_DIR:BrainLLM_API>/third_party/llm_sources
+        -P ${CMAKE_SOURCE_DIR}/cmake/CopyOptionalDirectory.cmake
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/config.ini
         $<TARGET_FILE_DIR:BrainLLM_API>/config.ini
